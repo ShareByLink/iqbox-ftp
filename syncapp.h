@@ -5,6 +5,8 @@
 
 #include "global.h"
 
+class LocationItem;
+
 class SyncApp : public QFtp
 {
     Q_OBJECT
@@ -31,6 +33,12 @@ private:
 
     // Private Members
 
+    QList<LocationItem> dirItems;
+
+    QList<LocationItem> doneItems;
+
+    int lsId;
+
     int stepsToHome;
 
     QString sessionHost;
@@ -44,16 +52,43 @@ private:
     void init();
 
 signals:
-    
+
 public slots:
 
     void requestLogin(const QString & username, const QString & password);
     
 private slots:
 
+    void finished(int commandId, bool success);
+
     void ready(bool error);
 
     void receiveUrl(const QUrlInfo & urlInfo);
+};
+
+/////////////////////////////////////////////////////////////////////////////////////
+
+class LocationItem {
+
+public:
+
+    enum Type {File, Directory};
+
+    LocationItem(const QString & path, Type type);
+
+    QString path() const;
+
+    Type type() const;
+
+    QString typeString() const;
+
+    friend QDebug operator<< (QDebug d, const LocationItem & item);
+
+private:
+
+    QString locationPath;
+
+    Type locationType;
 };
 
 #endif // SYNCAPP_H
