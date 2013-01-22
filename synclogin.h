@@ -18,6 +18,8 @@ public:
 
     ~SyncLogin();
 
+    void enableLogin();
+
     QString localPath() const;
     
 private:

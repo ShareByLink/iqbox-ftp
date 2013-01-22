@@ -2,10 +2,42 @@
 #define SYNCAPP_H
 
 #include <QFtp>
+#include <QFile>
 
 #include "global.h"
 
-class LocationItem;
+class LocationItem {
+
+public:
+
+    enum Type {File, Directory, Undefined};
+
+    LocationItem();
+
+    LocationItem(const QString & path, const QString & name, Type type);
+
+    QString name() const;
+
+    QString path() const;
+
+    Type type() const;
+
+    QString typeString() const;
+
+    friend QDebug operator<< (QDebug d, const LocationItem & item);
+
+    friend bool operator== (const LocationItem & rhs, const LocationItem & lhs);
+
+private:
+
+    QString locationName;
+
+    QString locationPath;
+
+    Type locationType;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////
 
 class SyncApp : public QFtp
 {
@@ -21,21 +53,33 @@ public:
 
     ~SyncApp();
 
-    void setHostname(const QString & hostname);
-
     QString hostname() const;
 
-    QString username() const;
+    QString localPath() const;
 
     QString password() const;
+
+    void setHostname(const QString & hostname);
+
+    void setLocalPath(const QString & localPath);
+
+    QString username() const;
 
 private:
 
     // Private Members
 
+    LocationItem currentDirItem;
+
+    QString currentDirPath;
+
     QList<LocationItem> dirItems;
 
+    int dlId;
+
     QList<LocationItem> doneItems;
+
+    QList<LocationItem> downloading;
 
     int lsId;
 
@@ -47,11 +91,25 @@ private:
 
     QString sessionPassword;
 
+    QString sessionPath;
+
+    int toHome;
+
     // Private Methods
+
+    void changeDirectory(const LocationItem & directory);
+
+    void downloadNext();
+
+    void goBack();
 
     void init();
 
+    void updateAll();
+
 signals:
+
+    void loggedIn(bool ok);
 
 public slots:
 
@@ -59,36 +117,11 @@ public slots:
     
 private slots:
 
-    void finished(int commandId, bool success);
+    void finished(int commandId, bool commandError);
 
-    void ready(bool error);
+    void ready(bool commandError);
 
     void receiveUrl(const QUrlInfo & urlInfo);
-};
-
-/////////////////////////////////////////////////////////////////////////////////////
-
-class LocationItem {
-
-public:
-
-    enum Type {File, Directory};
-
-    LocationItem(const QString & path, Type type);
-
-    QString path() const;
-
-    Type type() const;
-
-    QString typeString() const;
-
-    friend QDebug operator<< (QDebug d, const LocationItem & item);
-
-private:
-
-    QString locationPath;
-
-    Type locationType;
 };
 
 #endif // SYNCAPP_H

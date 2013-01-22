@@ -37,7 +37,8 @@ public slots:
 private slots:
 
     void loginRequested(const QString & hostname, const QString & username, const QString & password);
-    
+
+    void loginResult(bool ok);
 };
 
 #endif // SYNCWINDOW_H

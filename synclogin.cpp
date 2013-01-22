@@ -19,6 +19,12 @@ SyncLogin::~SyncLogin()
 {
 }
 
+void SyncLogin::enableLogin()
+{
+    loginButton->setEnabled(true);
+}
+
+
 QString SyncLogin::localPath() const
 {
     return pathEdit->text();
@@ -60,6 +66,8 @@ void SyncLogin::createWidgets()
 
     // Checking for previoulsy used settings.
     QSettings settings(AppSettings::companyName, AppSettings::appName);
+    QString defaultLocation = QDesktopServices::storageLocation(QDesktopServices::DocumentsLocation);
+    defaultLocation.append(QDir::separator() + AppSettings::appName + QDir::separator());
 
     QString username = !settings.value(AppSettings::keyUsername).toString().isEmpty() ?
                 settings.value(AppSettings::keyUsername).toString() : "";
@@ -72,7 +80,7 @@ void SyncLogin::createWidgets()
 
     QString localPath = !settings.value(AppSettings::keyLocalPath).toString().isEmpty() ?
                 settings.value(AppSettings::keyLocalPath).toString() :
-                QDesktopServices::storageLocation(QDesktopServices::DocumentsLocation);
+                defaultLocation;
 
     usernameLabel = new QLabel(this);
     usernameLabel->setText("Username");
@@ -135,6 +143,7 @@ void SyncLogin::loginRequested()
     QString path = pathEdit->text();
 
     if (!host.isEmpty() && !path.isEmpty()) {
+        loginButton->setEnabled(false);
         emit login(host, usernameEdit->text(), passwordEdit->text());
 
         // Always saves last used input.
