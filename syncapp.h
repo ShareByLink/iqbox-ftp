@@ -97,6 +97,8 @@ private:
 
     // Private Methods
 
+    void addDoneItem(const LocationItem & item);
+
     void changeDirectory(const LocationItem & directory);
 
     void downloadNext();

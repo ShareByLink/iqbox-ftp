@@ -1,3 +1,4 @@
+#include <QStringList>
 #include <QDir>
 
 #include "syncapp.h"
@@ -6,6 +7,7 @@ LocationItem::LocationItem()
 {
     locationPath = "";
     locationType = Undefined;
+    locationName = "";
 }
 
 LocationItem::LocationItem(const QString & path, const QString &name, Type type)
@@ -51,7 +53,7 @@ QString LocationItem::typeString() const
 }
 
 QDebug operator<< (QDebug d, const LocationItem & item) {
-    d << (item.path() + " - " + item.typeString());
+    d << (item.path() + " - " + item.name() + " - " + item.typeString());
     return d;
 }
 
@@ -123,6 +125,11 @@ QString SyncApp::username() const
 
 // Private Methods
 
+void SyncApp::addDoneItem(const LocationItem &item)
+{
+    if (!doneItems.contains(item))
+        doneItems.append(item);
+}
 
 void SyncApp::changeDirectory(const LocationItem & directory)
 {
@@ -130,22 +137,52 @@ void SyncApp::changeDirectory(const LocationItem & directory)
     currentDirItem = directory;
     dirItems.clear();
     downloading.clear();
+    if (!currentDirItem.path().isEmpty())
+        currentDirPath.append(currentDirItem.name() + QDir::separator());
 
-    cd(directory.path());
+    cd(directory.name());
     lsId = list();
 }
 
 void SyncApp::downloadNext()
 {
+    /*
     if (!downloading.isEmpty())
         dlId = get(downloading.at(0).name());
+    */
+    bool commandError = false;
+    if (!downloading.isEmpty()) {
+        LocationItem newItem = downloading.takeFirst();
+        addDoneItem(newItem);
+        if (!commandError) {
+            QString filePath = sessionPath + newItem.path();
+            QString dirPath = filePath.section(QDir::separator(), 0, -2);
+
+            if (!QDir(dirPath).exists())
+                QDir().mkpath(dirPath);
+
+            QFile newFile(filePath);
+            newFile.open(QFile::WriteOnly | QFile::Truncate);
+            newFile.write("Hello");
+            newFile.close();
+
+            updateAll();
+        }
+    }
 }
 
 void SyncApp::goBack()
 {
     toHome--;
-    QString newPath = currentDirItem.path().section("/", 0, -2);
-    currentDirItem = LocationItem(newPath, newPath, LocationItem::Directory);
+
+    QStringList steps = currentDirItem.path().split("/", QString::SkipEmptyParts);
+    QString prevPath;
+    for (int i = 0; i < steps.size() - 1; i++)
+        prevPath += steps.at(i) + "/";
+    QString prevName = steps.at(steps.size() - 2);
+
+    currentDirItem = LocationItem(prevPath, prevName, LocationItem::Directory);
+    currentDirPath = prevPath;
     dirItems.clear();
     downloading.clear();
 
@@ -164,28 +201,16 @@ void SyncApp::init()
 
 void SyncApp::updateAll()
 {
-    if (dirItems.isEmpty()) {
-        lsId = list();
-        currentDirPath = "";
-        return;
-    }
-
-    qDebug() << "Current list:" << dirItems;
-    qDebug() << "Done List:" << doneItems;
-    qDebug() << "Current Dir Item:" << currentDirItem;
-    qDebug() << "Current Dir Path:" << currentDirPath;
-
     if (downloading.isEmpty()) {
-        int i = 0;
         bool dirReady = true;
-        do {
-            LocationItem item = dirItems.at(i);
+        LocationItem item;
+        foreach (item, dirItems) {
             if (item.type() == LocationItem::Directory && !doneItems.contains(item)) {
                 dirReady = false;
                 changeDirectory(item);
                 break;
             }
-        } while(1);
+        }
 
         if (dirReady) {
             if (toHome == 0) {
@@ -193,7 +218,7 @@ void SyncApp::updateAll()
             }
 
             else {
-                doneItems.append(currentDirItem);
+                addDoneItem(currentDirItem);
                 goBack();
             }
         }
@@ -203,8 +228,6 @@ void SyncApp::updateAll()
         downloadNext();
     }
 }
-
-
 
 // Public Slots
 
@@ -226,8 +249,9 @@ void SyncApp::requestLogin(const QString &username, const QString &password)
 void SyncApp::finished(int commandId, bool commandError)
 {
     if (commandId == lsId) {
-        if (!currentDirItem.path().isEmpty())
-            currentDirPath.append(currentDirItem.path() + QDir::separator());
+
+        qDebug() << "Current Dir Item:" << currentDirItem;
+        qDebug() << "Current Dir Path:" << currentDirPath;
 
         QString dirPath = sessionPath + currentDirPath;
 
@@ -247,17 +271,15 @@ void SyncApp::finished(int commandId, bool commandError)
         LocationItem newItem = downloading.takeFirst();
         doneItems.append(newItem);
         if (!commandError) {
-            QString filePath = sessionPath + currentDirPath + newItem.path();
+            QString filePath = sessionPath + newItem.path();
             QString dirPath = filePath.section(QDir::separator(), 0, -2);
 
             if (!QDir(dirPath).exists())
                 QDir().mkpath(dirPath);
 
             QFile newFile(filePath);
-            qDebug() << "New file ok?" << newFile.open(QFile::WriteOnly | QFile::Truncate);
-            qDebug() << "Wrote to file:" << newFile.write(readAll());
-            qDebug() << "Size of file:" << newFile.size();
-            qDebug() << "Location of file:" << newFile.fileName();
+            newFile.open(QFile::WriteOnly | QFile::Truncate);
+            newFile.write(readAll());
             newFile.close();
 
             updateAll();
@@ -277,6 +299,8 @@ void SyncApp::ready(bool commandError)
         switch(state()) {
         case SyncApp::LoggedIn:
             emit loggedIn(true);
+            lsId = list();
+            currentDirPath = "";
             break;
 
         default:
@@ -303,16 +327,9 @@ void SyncApp::ready(bool commandError)
 void SyncApp::receiveUrl(const QUrlInfo & urlInfo)
 {
     QString path = currentDirPath + urlInfo.name();
+
     LocationItem::Type type = urlInfo.isDir() ?
                 LocationItem::Directory : LocationItem::File;
 
     dirItems.append(LocationItem(path, urlInfo.name(), type));
-
-    /*
-    qDebug() << "Url Name ->" << urlInfo.name();
-    qDebug() << "Url Owner ->" << urlInfo.owner();
-    qDebug() << "Url Group ->" << urlInfo.group();
-    qDebug() << "Url Last Mod ->" << urlInfo.lastModified();
-    qDebug() << "Url Directory ->" << urlInfo.isDir();
-    */
 }
