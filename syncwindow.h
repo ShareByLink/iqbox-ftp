@@ -2,10 +2,12 @@
 #define SYNCWINDOW_H
 
 #include <QMainWindow>
+#include <QSystemTrayIcon>
 
 #include "global.h"
 #include "synclogin.h"
 #include "syncapp.h"
+#include "syncscreen.h"
 
 class SyncWindow : public QMainWindow
 {
@@ -27,8 +29,11 @@ private:
 
     SyncApp * sync;
 
-    // Private Methods
+    QSystemTrayIcon * syncIcon;
 
+    SyncScreen * syncView;
+
+    // Private Methods
 
 signals:
     

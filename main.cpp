@@ -2,6 +2,8 @@
 
 #include "syncwindow.h"
 
+#include "encrypt.h"
+
 int main(int argc, char** argv)
 {
     QApplication syncApp(argc, argv);
@@ -9,4 +11,6 @@ int main(int argc, char** argv)
 
     sync.show();
     syncApp.exec();
+
+
 }

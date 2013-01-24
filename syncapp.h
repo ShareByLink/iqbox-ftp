@@ -81,6 +81,8 @@ private:
 
     QList<LocationItem> downloading;
 
+    int logId;
+
     int lsId;
 
     int stepsToHome;
@@ -111,17 +113,21 @@ private:
 
 signals:
 
+    void downloadingFile(const QString & file);
+
+    void finishedDownload();
+
     void loggedIn(bool ok);
 
 public slots:
+
+    void requestDownload();
 
     void requestLogin(const QString & username, const QString & password);
     
 private slots:
 
     void finished(int commandId, bool commandError);
-
-    void ready(bool commandError);
 
     void receiveUrl(const QUrlInfo & urlInfo);
 };

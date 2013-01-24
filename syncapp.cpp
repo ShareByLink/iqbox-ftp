@@ -140,34 +140,16 @@ void SyncApp::changeDirectory(const LocationItem & directory)
     if (!currentDirItem.path().isEmpty())
         currentDirPath.append(currentDirItem.name() + QDir::separator());
 
-    cd(directory.name());
-    lsId = list();
+    lsId = list(directory.path());
 }
 
 void SyncApp::downloadNext()
 {
-    /*
-    if (!downloading.isEmpty())
-        dlId = get(downloading.at(0).name());
-    */
-    bool commandError = false;
+
     if (!downloading.isEmpty()) {
-        LocationItem newItem = downloading.takeFirst();
-        addDoneItem(newItem);
-        if (!commandError) {
-            QString filePath = sessionPath + newItem.path();
-            QString dirPath = filePath.section(QDir::separator(), 0, -2);
-
-            if (!QDir(dirPath).exists())
-                QDir().mkpath(dirPath);
-
-            QFile newFile(filePath);
-            newFile.open(QFile::WriteOnly | QFile::Truncate);
-            newFile.write("Hello");
-            newFile.close();
-
-            updateAll();
-        }
+        QString nextFile = downloading.at(0).path();
+        dlId = get(nextFile);
+        emit downloadingFile(nextFile);
     }
 }
 
@@ -179,51 +161,63 @@ void SyncApp::goBack()
     QString prevPath;
     for (int i = 0; i < steps.size() - 1; i++)
         prevPath += steps.at(i) + "/";
-    QString prevName = steps.at(steps.size() - 2);
+    QString prevName = steps.size() <= 1 ? "" : steps.at(steps.size() - 2);
 
     currentDirItem = LocationItem(prevPath, prevName, LocationItem::Directory);
     currentDirPath = prevPath;
     dirItems.clear();
     downloading.clear();
 
-    cd("..");
-    lsId = list();
+    lsId = list(currentDirItem.path());
 }
 
 void SyncApp::init()
 {
     toHome = 0;
 
-    connect(this, SIGNAL(done(bool)), this, SLOT(ready(bool)));
     connect(this, SIGNAL(listInfo(QUrlInfo)), this, SLOT(receiveUrl(QUrlInfo)));
     connect(this, SIGNAL(commandFinished(int,bool)), this, SLOT(finished(int,bool)));
 }
 
 void SyncApp::updateAll()
 {
+    // Main method for recursive download.
     if (downloading.isEmpty()) {
+        // Finished downloading current directory.
         bool dirReady = true;
         LocationItem item;
         foreach (item, dirItems) {
             if (item.type() == LocationItem::Directory && !doneItems.contains(item)) {
+                // Found a directory that is not in 'doneItems', will check it up.
                 dirReady = false;
                 changeDirectory(item);
                 break;
             }
         }
 
+        // All items in the current directory are in 'doneItems',
+        // and all files have been downloaded as the list 'downloading' is empty.
         if (dirReady) {
             if (toHome == 0) {
-                // Finished!
+                // If home directory is finished, that is it.
+                abort();
+                qDebug() << "Finished" << currentCommand();
+                lsId = 0;
+                emit finishedDownload();
+                return;
             }
 
             else {
+                // Not in home, going back looking for
+                // items in previous directory.
                 addDoneItem(currentDirItem);
                 goBack();
             }
         }
     }
 
+    // Keep downloading all files until
+    // the list is empty.
     else {
         downloadNext();
     }
@@ -231,14 +225,18 @@ void SyncApp::updateAll()
 
 // Public Slots
 
+void SyncApp::requestDownload()
+{
+    lsId = list();
+}
+
 void SyncApp::requestLogin(const QString &username, const QString &password)
 {
     if (sessionHost.isEmpty())
         return;
 
     connectToHost(sessionHost);
-    login(username, password);
-    updateAll();
+    logId = login(username, password);
 
     sessionUser = username;
     sessionPassword = password;
@@ -249,83 +247,77 @@ void SyncApp::requestLogin(const QString &username, const QString &password)
 void SyncApp::finished(int commandId, bool commandError)
 {
     if (commandId == lsId) {
-
+        // Finished list lookup, 'dirItems' is now filled only with
+        // the items in the current directory.
         qDebug() << "Current Dir Item:" << currentDirItem;
         qDebug() << "Current Dir Path:" << currentDirPath;
 
+        // Finds out the local path for the corresponding
+        // to the corrent directory, and creates it in local
+        // filesystem if it doesn't exist.
         QString dirPath = sessionPath + currentDirPath;
-
         if (!QDir(dirPath).exists())
             QDir().mkpath(dirPath);
 
+        // Checking up what items in the current directory
+        // are Files that need downloading.
         LocationItem item;
         foreach (item, dirItems) {
             if (item.type() == LocationItem::File && !doneItems.contains(item))
                 downloading.append(item);
         }
 
+        // Calls the method *almost* recursively.
         updateAll();
     }
 
     else if (commandId == dlId) {
-        LocationItem newItem = downloading.takeFirst();
-        doneItems.append(newItem);
-        if (!commandError) {
-            QString filePath = sessionPath + newItem.path();
-            QString dirPath = filePath.section(QDir::separator(), 0, -2);
+        // Finished downloading a file, saving it
+        // to the local filesystem in the right path.
+        if (!downloading.isEmpty()) {
+            LocationItem newItem = downloading.takeFirst();
+            doneItems.append(newItem);
+            if (!commandError) {
+                QString filePath = sessionPath + newItem.path();
+                QString dirPath = filePath.section(QDir::separator(), 0, -2);
 
-            if (!QDir(dirPath).exists())
-                QDir().mkpath(dirPath);
+                if (!QDir(dirPath).exists())
+                    QDir().mkpath(dirPath);
 
-            QFile newFile(filePath);
-            newFile.open(QFile::WriteOnly | QFile::Truncate);
-            newFile.write(readAll());
-            newFile.close();
+                QFile newFile(filePath);
+                newFile.open(QFile::WriteOnly | QFile::Truncate);
+                newFile.write(readAll());
+                newFile.close();
 
-            updateAll();
+                // Calls the method *almost* recursively.
+                updateAll();
+            }
         }
 
         else {
             qDebug() << "Error Downloading:" << error() << errorString();
         }
     }
-}
 
-void SyncApp::ready(bool commandError)
-{
-    qDebug() << "Ready: " << !commandError << errorString() << state() << currentCommand();
-
-    if (!commandError) {
-        switch(state()) {
-        case SyncApp::LoggedIn:
-            emit loggedIn(true);
-            lsId = list();
+    else if (commandId == logId) {
+        if (!commandError) {
             currentDirPath = "";
-            break;
-
-        default:
-            qDebug() << state();
-            break;
         }
-    }
 
-    else {
-        switch(error()) {
-        case SyncApp::ConnectionRefused: case SyncApp::UnknownError:
+        else {
             close();
-            emit loggedIn(false);
-            break;
-
-        default:
-            qDebug() << error();
-            break;
         }
 
+
+        emit loggedIn(!commandError);
     }
 }
 
 void SyncApp::receiveUrl(const QUrlInfo & urlInfo)
 {
+    // This method is called when getting the list
+    // of the current directory.
+    // It receives each item in the curreny directory one by one.
     QString path = currentDirPath + urlInfo.name();
 
     LocationItem::Type type = urlInfo.isDir() ?

@@ -4,6 +4,7 @@
 #include <QDesktopServices>
 
 #include "synclogin.h"
+#include "encrypt.h"
 
 // Public Methods
 
@@ -67,13 +68,16 @@ void SyncLogin::createWidgets()
     // Checking for previoulsy used settings.
     QSettings settings(AppSettings::companyName, AppSettings::appName);
     QString defaultLocation = QDesktopServices::storageLocation(QDesktopServices::DocumentsLocation);
+    QString decryptedPass = settings.value(AppSettings::keyPassword).toString();
+
     defaultLocation.append(QDir::separator() + AppSettings::appName + QDir::separator());
+    Encrypt::decrypt(&decryptedPass);
 
     QString username = !settings.value(AppSettings::keyUsername).toString().isEmpty() ?
                 settings.value(AppSettings::keyUsername).toString() : "";
 
     QString password = !settings.value(AppSettings::keyPassword).toString().isEmpty() ?
-                settings.value(AppSettings::keyPassword).toString() : "";
+                decryptedPass : "";
 
     QString hostname = !settings.value(AppSettings::keyHostname).toString().isEmpty() ?
                 settings.value(AppSettings::keyHostname).toString() : "ftp://";
@@ -148,9 +152,11 @@ void SyncLogin::loginRequested()
 
         // Always saves last used input.
         QSettings settings(AppSettings::companyName, AppSettings::appName);
+        QString encryptedPass = passwordEdit->text();
+        Encrypt::encrypt(&encryptedPass);
 
         settings.setValue(AppSettings::keyUsername, usernameEdit->text());
-        settings.setValue(AppSettings::keyPassword, passwordEdit->text());
+        settings.setValue(AppSettings::keyPassword, encryptedPass);
         settings.setValue(AppSettings::keyHostname, hostEdit->text());
         settings.setValue(AppSettings::keyLocalPath, pathEdit->text());
     }
