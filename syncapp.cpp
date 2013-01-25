@@ -148,7 +148,7 @@ void SyncApp::downloadNext()
 
     if (!downloading.isEmpty()) {
         QString nextFile = downloading.at(0).path();
-        dlId = get(nextFile);
+        dlId = get(QDir::fromNativeSeparators(nextFile));
         emit downloadingFile(nextFile);
     }
 }
@@ -288,10 +288,10 @@ void SyncApp::finished(int commandId, bool commandError)
                 newFile.open(QFile::WriteOnly | QFile::Truncate);
                 newFile.write(readAll());
                 newFile.close();
-
-                // Calls the method *almost* recursively.
-                updateAll();
             }
+
+            // Calls the method *almost* recursively.
+            updateAll();
         }
 
         else {

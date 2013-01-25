@@ -70,6 +70,8 @@ void SyncScreen::setUsername(const QString &username)
 
 void SyncScreen::transferProgress(qint64 done, qint64 total)
 {
+    // Preventing division by zero.
+    total = total == 0 ? 1 : total;
     qint64 percent = done * 100 / total;
 
     progressLabel->setText(QString::number(percent) + "%");

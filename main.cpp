@@ -10,7 +10,5 @@ int main(int argc, char** argv)
     SyncWindow sync;
 
     sync.show();
-    syncApp.exec();
-
-
+    return syncApp.exec();
 }
