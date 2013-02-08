@@ -147,7 +147,7 @@ void SyncApp::downloadNext()
 {
 
     if (!downloading.isEmpty()) {
-        QString nextFile = downloading.at(0).path();
+        QString nextFile = downloading.first().path();
         dlId = get(QDir::fromNativeSeparators(nextFile));
         emit downloadingFile(nextFile);
     }
@@ -318,10 +318,14 @@ void SyncApp::receiveUrl(const QUrlInfo & urlInfo)
     // This method is called when getting the list
     // of the current directory.
     // It receives each item in the curreny directory one by one.
-    QString path = currentDirPath + urlInfo.name();
+    QString urlName = urlInfo.name();
+    // Some servers return '.' and '..' in the list.
+    if (urlName != "." && urlName != "..") {
+        QString path = currentDirPath + urlInfo.name();
 
-    LocationItem::Type type = urlInfo.isDir() ?
-                LocationItem::Directory : LocationItem::File;
+        LocationItem::Type type = urlInfo.isDir() ?
+                    LocationItem::Directory : LocationItem::File;
 
-    dirItems.append(LocationItem(path, urlInfo.name(), type));
+        dirItems.append(LocationItem(path, urlInfo.name(), type));
+    }
 }
