@@ -319,9 +319,9 @@ void SyncApp::receiveUrl(const QUrlInfo & urlInfo)
     // of the current directory.
     // It receives each item in the curreny directory one by one.
     QString urlName = urlInfo.name();
-    // Some servers return '.' and '..' in the list.
+    // Some servers return '.' and '..' in the list, ignoring those.
     if (urlName != "." && urlName != "..") {
-        QString path = currentDirPath + urlInfo.name();
+        QString path = currentDirPath + urlName;
 
         LocationItem::Type type = urlInfo.isDir() ?
                     LocationItem::Directory : LocationItem::File;
