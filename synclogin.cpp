@@ -80,7 +80,7 @@ void SyncLogin::createWidgets()
                 decryptedPass : "";
 
     QString hostname = !settings.value(AppSettings::keyHostname).toString().isEmpty() ?
-                settings.value(AppSettings::keyHostname).toString() : "ftp://";
+                settings.value(AppSettings::keyHostname).toString() : "";
 
     QString localPath = !settings.value(AppSettings::keyLocalPath).toString().isEmpty() ?
                 settings.value(AppSettings::keyLocalPath).toString() :
