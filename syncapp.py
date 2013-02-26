@@ -4,13 +4,14 @@ import datetime
 
 
 dt = datetime.datetime
+#BaseFTP = ftplib.FTP_TLS
+BaseFTP = ftplib.FTP
 
-
-class SyncApp(ftplib.FTP_TLS):
+class SyncApp(BaseFTP):
     """Extending the`ftplib.FTP_TLS` class"""
 
     def __init__(self, host, localdir):
-        ftplib.FTP_TLS.__init__(self, host)
+        BaseFTP.__init__(self, host)
         
         self.localdir = localdir
         
@@ -23,11 +24,11 @@ class SyncApp(ftplib.FTP_TLS):
         
     def checkout(self):
         """
-        Syncronizes all files on the server by recursively downloading the files.
+        Syncronizes all files on the server by recursively downloading all files.
         Any local files will be truncated.
         """
         
-        # Handy variables to keep track of the checkout process.
+        # Handy lists to keep track of the checkout process.
         # These lists contain absolute paths only.
         checked_dirs = list()
         downloaded = list()
@@ -35,6 +36,8 @@ class SyncApp(ftplib.FTP_TLS):
         # Sets '/' as initial directory and initializes `downloading_dir`
         self.cwd('/')
         downloading_dir = self.currentdir
+        
+        print 'Init dir: %s' % downloading_dir
             
         while True:
             # Gets the list of sub directories and files inside the 
@@ -42,9 +45,14 @@ class SyncApp(ftplib.FTP_TLS):
             dir_subdirs = self.getDirs(downloading_dir)
             dirfiles = self.getFiles(downloading_dir)
             
+            print 'Sub: %s' % dir_subdirs
+            print 'Files: %s' % dirfiles
+            print 'Current: %s' % downloading_dir
+           
             # Leading '/' in `downloading_dir` breaks the `os.path.join` call
             localdir = os.path.join(self.localdir, downloading_dir[1:])
             if not os.path.exists(localdir):
+                print 'Local dir: %s' % localdir
                 # Creates the directory if it doesn't already exists.
                 os.makedirs(localdir)
 
@@ -61,7 +69,7 @@ class SyncApp(ftplib.FTP_TLS):
             for dir in dir_subdirs:
                 # `dirpath` is the absolute path of the subdirectory on the server,
                 dirpath = os.path.join(downloading_dir, dir)
-                
+                print 'Going', dirpath, dir, downloading_dir
                 # `downloading_dir` is ready only when all its subdirectory are on the 
                 # `checked_dirs` list.
                 if dirpath not in checked_dirs:
@@ -69,6 +77,7 @@ class SyncApp(ftplib.FTP_TLS):
                     # will process it in the next iteration.
                     downloading_dir = dirpath
                     dir_ready = False
+                    break
                     
             if dir_ready is True:
                 # All subdirectories of `downloading_dir` are already in `checked_dirs`
@@ -90,7 +99,13 @@ class SyncApp(ftplib.FTP_TLS):
         :param path: Relative or absolute path on the server
        """
         try:
-            return self.nlst(path)
+            nlst = self.nlst(path)
+            dirs = self.getDirs(path)
+            
+            # Files are items in nlst that are not in dirs
+            files = [item for item in nlst if os.path.basename(item) not in dirs]
+            
+            return files
         except:
             return []
              
@@ -109,12 +124,12 @@ class SyncApp(ftplib.FTP_TLS):
             
             :params line: Line from the LIST command
             """
-            
+
             if line.startswith('d'):
                 # Only lines starting with 'd' are directories
                 # Parse the directory out of the line; lines look like:
                 # 'drwxrwxrwx   1 user     group           0 Jun 15  2012 dirname'
-                dirname = line.split(' ')[-1]
+                dirname = line[56:]
                 if dirname != '.' and dirname != '..':
                     # Ignoring '.' and '..' entries
                     dirs.append(dirname)
@@ -134,13 +149,13 @@ class SyncApp(ftplib.FTP_TLS):
         
         def handleChunk(chunk):
             """
-            Recieves chuncks of data downloaded from the server.
+            Receives chuncks of data downloaded from the server.
             This function is meant to be used as callback for the `retrbinary` method.
             
             :params chunk: Chunk of downloaded bytes to be written into the file
             """
         
-            # Simply writes the recieved data into the file `self.downloading`
+            # Simply writes the received data into the file `self.downloading`
             self.downloading.write(chunk)
             self.download_total += len(chunk)
         
@@ -159,6 +174,7 @@ class SyncApp(ftplib.FTP_TLS):
         with open(localpath, 'wb') as f:
             # Opens the file at `localname` which will hold the downloaded file.
             # Object attributes regarding download status are updated accordingly.
+            print 'Downloading: %s' % file
             self.downloading = f
             self.download_size = int(self.sendcmd('SIZE %s' % file).split(' ')[-1])
             self.download_total = 0
@@ -182,7 +198,8 @@ class SyncApp(ftplib.FTP_TLS):
 
 
 if __name__ == '__main__':
-    app = SyncApp('ftp.iqstorage.com', '/home/sergio/Documents/FTPSync')
+    """
+    app = SyncApp('ftp.iqstorage.com', '/home/sergio/Documents/FTPSync/iq')
     
     app.login('testuser', 'test')
     time = app.lastModified('test2/2.15 MB Download.bin')
@@ -191,6 +208,15 @@ if __name__ == '__main__':
     print 'Dirs in "/test2": %s' % app.getDirs('/test2')
     print 'Files in "/": %s' % app.nlst('/')
     print 'Files in "/test2": %s' % app.nlst('/test2')
+    """
+    """
+    app2 = SyncApp('10.18.210.193', '/home/sergio/Documents/FTPSync/book')
+    print app2.login('sergio', 'lopikljh')
+    """
+    app2 = SyncApp('ops.osop.com.pa', '/home/sergio/Documents/FTPSync/mareas')
+    print app2.login('mareas', 'mareas123')
+    print 'Dirs in "/": %s' % app2.getDirs('/')
+    print 'Files in "/": %s' % app2.getFiles('/')
     
-    app.checkout()
+    app2.checkout()
 
