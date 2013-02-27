@@ -14,20 +14,24 @@ def get_ftp(tls, *args):
     :param tls: Select whether the FTP object needs TLS support or not
     :param args: Arguments that will be passed to the `SyncApp` constructor
     """
+    
     BaseFTP = ftplib.FTP_TLS if tls is True else ftplib.FTP
     class SyncApp(BaseFTP):
     
-        def __init__(self, host, localdir):
+        def __init__(self, host):
             BaseFTP.__init__(self, host)
-            
-            self.localdir = localdir
-            
-            if not os.path.exists(self.localdir):
-                os.makedirs(self.localdir)
+        
+            self.localdir = ''
         
         @property
         def currentdir(self):
             return self.pwd()
+            
+        def setLocalDir(self, localdir):
+            self.localdir = localdir
+            
+            if not os.path.exists(self):
+                os.makedirs(self.localdir)
             
         def checkout(self):
             """
@@ -207,20 +211,23 @@ def get_ftp(tls, *args):
 
 if __name__ == '__main__':
 
-    app = get_ftp(True, 'ftp.iqstorage.com', '/home/sergio/Documents/FTPSync/iq')
+    app = get_ftp(True, 'ftp.iqstorage.com')
     
+    app.setLocalDir('/home/sergio/Documents/FTPSync/iq')
     app.login('testuser', 'test')
     time = app.lastModified('test2/2.15 MB Download.bin')
     print 'UTC: %s, Local: %s' % (time, time - datetime.timedelta(hours=5))
     print 'Dirs in "/": %s' % app.getDirs('/')
     print 'Files in "/": %s' % app.nlst('/')
 
-    app2 = get_ftp(False, '10.18.210.193', '/home/sergio/Documents/FTPSync/book')
+    app2 = get_ftp(False, '10.18.210.193')
+    app2.setLocalDir('/home/sergio/Documents/FTPSync/book')
     print app2.login('sergio', 'lopikljh')
     print 'Dirs in "/": %s' % app2.getDirs('/')
     print 'Files in "/": %s' % app2.getFiles('/')
 
     app3 = get_ftp(False, 'ops.osop.com.pa', '/home/sergio/Documents/FTPSync/mareas')
+    app3.setLocalDir('/home/sergio/Documents/FTPSync/book')
     print app3.login('mareas', 'mareas123')
     print 'Dirs in "/": %s' % app3.getDirs('/')
     print 'Files in "/": %s' % app3.getFiles('/')
