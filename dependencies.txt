@@ -1,0 +1,8 @@
+pyside
+argparse
+argh
+pathtools
+pyyaml
+brownie
+
+
