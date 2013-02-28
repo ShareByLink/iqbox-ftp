@@ -29,8 +29,6 @@ def get_ftp(tls, *args):
     
     BaseFTP = ftplib.FTP_TLS if tls is True else ftplib.FTP
     class SyncApp(BaseFTP):
-        
-
     
         def __init__(self, host):
             BaseFTP.__init__(self, host)
@@ -43,9 +41,6 @@ def get_ftp(tls, *args):
         def currentdir(self):
             return self.pwd()
             
-        def notify(self, type, message):
-            pass
-            
         def setLocalDir(self, localdir):
             self.localdir = localdir
             
@@ -54,7 +49,7 @@ def get_ftp(tls, *args):
             
         def checkout(self):
             """
-            Syncronizes all files on the server by recursively downloading all files.
+            Syncs all files on the server by recursively downloading all files.
             Any local files will be truncated.
             """
             
@@ -86,20 +81,19 @@ def get_ftp(tls, *args):
                     # Creates the directory if it doesn't already exists.
                     os.makedirs(localdir)
     
-                for file in dirfiles:
+                for file_ in dirfiles:
                     # `serverpath` is the absolute path of the file on the server,
                     # download it only if it hasn't been already downloaded
-                    serverpath = os.path.join(downloading_dir, file)
+                    serverpath = os.path.join(downloading_dir, file_)
                     if serverpath not in downloaded:
                         # Downloads the file and appends it absolute path to the `downloaded` list
                         self.downloadFile(serverpath)
                         downloaded.append(serverpath)
                         
                 dir_ready = True
-                for dir in dir_subdirs:
+                for dir_ in dir_subdirs:
                     # `dirpath` is the absolute path of the subdirectory on the server,
-                    dirpath = os.path.join(downloading_dir, dir)
-                    print 'Going', dirpath, dir, downloading_dir
+                    dirpath = os.path.join(downloading_dir, dir_)
                     # `downloading_dir` is ready only when all its subdirectory are on the 
                     # `checked_dirs` list.
                     if dirpath not in checked_dirs:
@@ -168,10 +162,10 @@ def get_ftp(tls, *args):
             self.retrlines('LIST %s' % path, handleLine)
             return dirs
             
-        def downloadFile(self, file, localpath=None):
+        def downloadFile(self, filename, localpath=None):
             """
-            Performs a binary download to the file `file` located on the server.
-            `file` parameter can be either absolute or relative, though it can
+            Performs a binary download to the file `filename` located on the server.
+            `filename` parameter can be either absolute or relative, though it can
             fail for relative paths if the current directory is not appropiate.
             
             :param filename: Relative or absolute path to the file
@@ -193,9 +187,9 @@ def get_ftp(tls, *args):
             
             
             if localpath is None:
-                # Gets the absolute local file path corresponding to the file `file`
-                # removing '/' at the beginnig of `file` so the `os.path.join` call works
-                file_ = file[1:] if file.startswith('/') else file
+                # Gets the absolute local file path corresponding to the file `filename`
+                # removing '/' at the beginnig of `filename` so the `os.path.join` call works
+                file_ = filename[1:] if filename.startswith('/') else filename
                 localpath = os.path.join(self.localdir, file_)
             
             localdir = os.path.dirname(localpath)
@@ -206,14 +200,14 @@ def get_ftp(tls, *args):
             with open(localpath, 'wb') as f:
                 # Opens the file at `localname` which will hold the downloaded file.
                 # Object attributes regarding download status are updated accordingly.
-                print 'Downloading: %s' % file
-                self.notify.downloadingFile.emit(file)
+                print 'Downloading: %s' % filename
+                self.notify.downloadingFile.emit(filename)
                 self.downloading = f
-                self.download_size = int(self.sendcmd('SIZE %s' % file).split(' ')[-1])
+                self.download_size = int(self.sendcmd('SIZE %s' % filename).split(' ')[-1])
                 self.download_progress = 0
-                self.retrbinary('RETR %s' % file, handleChunk)
+                self.retrbinary('RETR %s' % filename, handleChunk)
                 
-        def lastModified(self, file):
+        def lastModified(self, filename):
             """
             Uses the MDTM FTP command to find the last modified timestamp
             of the file `filename`.
@@ -223,11 +217,11 @@ def get_ftp(tls, *args):
             :param filename: Relative or absolute path to the file
             """
             
-            timestamp = self.sendcmd('MDTM %s' % file)
+            timestamp = self.sendcmd('MDTM %s' % filename)
             timestamp = timestamp.split(' ')[-1]
-            format = '%Y%m%d%H%M%S.%f' if '.' in timestamp else '%Y%m%d%H%M%S'
+            dateformat = '%Y%m%d%H%M%S.%f' if '.' in timestamp else '%Y%m%d%H%M%S'
             
-            return dt.strptime(timestamp, format)
+            return dt.strptime(timestamp, dateformat)
             
     return SyncApp(*args)
 

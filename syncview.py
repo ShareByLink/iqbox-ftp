@@ -1,8 +1,8 @@
 import os
 import sys
-import signal
+import platform
 
-from PySide.QtCore import Qt, Slot, Signal, QSettings
+from PySide.QtCore import Qt, Slot, Signal, QSettings, QDir
 from PySide.QtGui import QWidget, QMainWindow, QApplication
 from PySide.QtGui import QPushButton, QLabel, QLineEdit, QFont, QFileDialog
 from PySide.QtGui import QHBoxLayout, QVBoxLayout, QPixmap, QFrame, QIcon, QSystemTrayIcon
@@ -11,11 +11,22 @@ import resources
 import syncapp
 
 
+resources.qInitResources()
+
+
 SettingsKeys = {
     'host': 'Host',
     'username': 'Username',
     'passwd': 'Password',
     'localdir': 'LocalDir'}
+
+osname = platform.system()
+if osname == 'Windows':
+    fontfamily = 'Segoe UI'
+elif osname == 'Linux':
+    fontfamily = ''
+else:
+    fontfamily = '' 
 
 
 def get_settings():
@@ -96,8 +107,8 @@ class SyncWindow(QMainWindow):
             self.statusBar().showMessage('%s %d%%' % (self.currentFile, percent))
         
     @Slot(str)
-    def onDownloadingFile(self, file):
-        self.currentFile = file
+    def onDownloadingFile(self, filename):
+        self.currentFile = filename
     
     @Slot()
     def onCheckoutDone(self):
@@ -118,7 +129,7 @@ class View(QWidget):
         
     @staticmethod
     def font(bold):
-        font = QFont('', 9, 50, False)
+        font = QFont(fontfamily, 9, 50, False)
         font.setBold(bold)
         
         return font
@@ -309,12 +320,12 @@ class SyncView(View):
     @Slot()
     def onBrowseClicked(self):
         localdir = QFileDialog.getExistingDirectory()
-        
+        localdir = QDir.fromNativeSeparators(localdir)
         print 'Localdir', localdir
         if len(localdir) > 0:
             localdir = os.path.join(localdir, 'FTPSync')
             get_settings().setValue(SettingsKeys['localdir'], localdir)
-            self.localdirEdit.setText(localdir)
+            self.localdirEdit.setText(QDir.toNativeSeparators(localdir))
             
     @Slot()
     def onSyncClicked(self):
@@ -326,7 +337,7 @@ class SyncView(View):
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = SyncWindow()
-    font = QFont('', 12, 50, False)
+    font = QFont(fontfamily, 12, 50, False)
     
     app.setFont(font)
     window.show()
