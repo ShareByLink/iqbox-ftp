@@ -2,8 +2,20 @@ import os
 import ftplib
 import datetime
 
+from PySide.QtCore import QObject, Signal
+
 
 dt = datetime.datetime
+
+
+class Notify(QObject):
+    
+    downloadProgress = Signal((int, int,))
+    downloadingFile = Signal((str,))
+    checkoutDone = Signal()
+    
+    def __init__(self):
+        super(Notify, self).__init__(None)
 
 
 def get_ftp(tls, *args):
@@ -17,20 +29,27 @@ def get_ftp(tls, *args):
     
     BaseFTP = ftplib.FTP_TLS if tls is True else ftplib.FTP
     class SyncApp(BaseFTP):
+        
+
     
         def __init__(self, host):
             BaseFTP.__init__(self, host)
         
             self.localdir = ''
+            
+            self.notify = Notify()
         
         @property
         def currentdir(self):
             return self.pwd()
             
+        def notify(self, type, message):
+            pass
+            
         def setLocalDir(self, localdir):
             self.localdir = localdir
             
-            if not os.path.exists(self):
+            if not os.path.exists(self.localdir):
                 os.makedirs(self.localdir)
             
         def checkout(self):
@@ -94,6 +113,7 @@ def get_ftp(tls, *args):
                     # All subdirectories of `downloading_dir` are already in `checked_dirs`
                     if self.currentdir == '/':
                         # All directories ready and at '/', means checkout is complete
+                        self.notify.checkoutDone.emit()
                         break
                         
                     else:
@@ -168,7 +188,8 @@ def get_ftp(tls, *args):
             
                 # Simply writes the received data into the file `self.downloading`
                 self.downloading.write(chunk)
-                self.download_total += len(chunk)
+                self.download_progress += len(chunk)
+                self.notify.downloadProgress.emit(self.download_size, self.download_progress)
             
             
             if localpath is None:
@@ -186,9 +207,10 @@ def get_ftp(tls, *args):
                 # Opens the file at `localname` which will hold the downloaded file.
                 # Object attributes regarding download status are updated accordingly.
                 print 'Downloading: %s' % file
+                self.notify.downloadingFile.emit(file)
                 self.downloading = f
                 self.download_size = int(self.sendcmd('SIZE %s' % file).split(' ')[-1])
-                self.download_total = 0
+                self.download_progress = 0
                 self.retrbinary('RETR %s' % file, handleChunk)
                 
         def lastModified(self, file):

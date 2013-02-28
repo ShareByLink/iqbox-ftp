@@ -5,7 +5,7 @@ import signal
 from PySide.QtCore import Qt, Slot, Signal, QSettings
 from PySide.QtGui import QWidget, QMainWindow, QApplication
 from PySide.QtGui import QPushButton, QLabel, QLineEdit, QFont, QFileDialog
-from PySide.QtGui import QHBoxLayout, QVBoxLayout, QPixmap, QFrame
+from PySide.QtGui import QHBoxLayout, QVBoxLayout, QPixmap, QFrame, QIcon, QSystemTrayIcon
 
 import resources
 import syncapp
@@ -29,8 +29,14 @@ class SyncWindow(QMainWindow):
     def __init__(self, parent=None):
         super(SyncWindow, self).__init__(parent)
         
+        self.tray = QSystemTrayIcon(self)
+        self.tray.setIcon(QIcon(QPixmap(':/resources/icon.png')))
+        self.tray.show()
+        
         self.setStyleSheet('SyncWindow {background: white}')
         self.setWindowTitle('FTPSync')
+        self.setWindowIcon(QIcon(QPixmap(':/resources/logobar.png')))
+        self.statusBar().setFont(View.labelsFont())
         self.loginView()
         
     def loginView(self):
@@ -41,16 +47,29 @@ class SyncWindow(QMainWindow):
         
         self.setCentralWidget(login)
         self.setFixedSize(login.size())
+        self.statusBar().hide()
         
     def syncView(self):
         syncview = SyncView()
         
         self.setCentralWidget(syncview)
         self.setFixedSize(syncview.size())
+        self.statusBar().show()
         
+        syncview.sync.connect(self.onSync)
+        
+    def getFtp(self, host):
+        sync = syncapp.get_ftp(False, host)
+        
+        sync.notify.downloadProgress.connect(self.onDownloadProgress)
+        sync.notify.downloadingFile.connect(self.onDownloadingFile)
+        sync.notify.checkoutDone.connect(self.onCheckoutDone)
+        
+        return sync
+   
     @Slot(str, str, str)
     def onLogin(self, host, username, passwd):
-        self.sync = syncapp.get_ftp(False, host)
+        self.sync = self.getFtp(host)
         
         try:
             loginResponse = self.sync.login(username, passwd)
@@ -62,7 +81,27 @@ class SyncWindow(QMainWindow):
                 self.syncView()
             else:
                 self.failedLogIn.emit()
+                
+    @Slot(str)
+    def onSync(self, localdir):
+        self.sync.setLocalDir(localdir)
+        self.sync.checkout()
 
+    @Slot(int, int)
+    def onDownloadProgress(self, total, progress):
+        if progress <= 0:
+            return
+        else:
+            percent = (progress * 100) / total
+            self.statusBar().showMessage('%s %d%%' % (self.currentFile, percent))
+        
+    @Slot(str)
+    def onDownloadingFile(self, file):
+        self.currentFile = file
+    
+    @Slot()
+    def onCheckoutDone(self):
+        self.statusBar().showMessage('Sync Completed')
 
 class View(QWidget):
     
@@ -201,6 +240,8 @@ class LoginView(View):
         
 class SyncView(View):
     
+    sync = Signal((str,))
+    
     def __init__(self, parent=None):
         super(SyncView, self).__init__(parent)
         
@@ -277,8 +318,10 @@ class SyncView(View):
             
     @Slot()
     def onSyncClicked(self):
-        pass
-        
+        localdir = self.localdirEdit.text()
+        if len(localdir) > 0:
+            self.sync.emit(localdir)
+
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
