@@ -5,7 +5,7 @@ import traceback
 
 from PySide.QtCore import Qt, Slot, Signal, QSettings, QDir, QThread
 from PySide.QtGui import QWidget, QMainWindow, QApplication, QCheckBox
-from PySide.QtGui import QPushButton, QLabel, QLineEdit, QFont, QFileDialog
+from PySide.QtGui import QPushButton, QLabel, QLineEdit, QFont, QFileDialog, QMessageBox
 from PySide.QtGui import QHBoxLayout, QVBoxLayout, QPixmap, QFrame, QIcon, QSystemTrayIcon
 
 import resources
@@ -63,6 +63,7 @@ class SyncWindow(QMainWindow):
         self.setWindowTitle('FTPSync')
         self.setWindowIcon(QIcon(QPixmap(':/resources/logobar.png')))
         self.statusBar().setFont(View.labelsFont())
+        self.ftpThread = None
         
         # Initializes the window with a `LoginView` widget.
         self.loginView()
@@ -136,6 +137,17 @@ class SyncWindow(QMainWindow):
         except:
             info = traceback.format_exception(*sys.exc_info())
             for i in info: sys.stderr.write(i)
+            
+            warning = QMessageBox(self)
+            warning.setFont(View.labelsFont())
+            warning.setStyleSheet('QMessageBox {background: white}')
+            warning.setWindowTitle("Error")
+            warning.setText(
+                "Log in failed.\nPlease check your credentials and SSL settings.")
+            warning.setIcon(QMessageBox.Warning)
+            warning.addButton("Ok", QMessageBox.AcceptRole).setFont(View.editsFont())
+            warning.exec_()
+            
             self.failedLogIn.emit()
         else:
             print loginResponse
@@ -336,7 +348,6 @@ class LoginView(View):
         self.loginButton.setText('Login')
         self.loginButton.setFont(labelsFont)
         self.loginButton.setFixedWidth(fieldsWidth / 2)
-        self.loginButton.setStyleSheet('')
         self.loginButton.clicked.connect(self.onLoginClicked)
         
         # Sets previously stored values into the fields, if any
