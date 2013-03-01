@@ -3,7 +3,7 @@ import sys
 import platform
 
 from PySide.QtCore import Qt, Slot, Signal, QSettings, QDir
-from PySide.QtGui import QWidget, QMainWindow, QApplication
+from PySide.QtGui import QWidget, QMainWindow, QApplication, QCheckBox
 from PySide.QtGui import QPushButton, QLabel, QLineEdit, QFont, QFileDialog
 from PySide.QtGui import QHBoxLayout, QVBoxLayout, QPixmap, QFrame, QIcon, QSystemTrayIcon
 
@@ -18,7 +18,8 @@ SettingsKeys = {
     'host': 'Host',
     'username': 'Username',
     'passwd': 'Password',
-    'localdir': 'LocalDir'}
+    'localdir': 'LocalDir',
+    'ssl': 'SSL'}
 
 osname = platform.system()
 if osname == 'Windows':
@@ -69,8 +70,8 @@ class SyncWindow(QMainWindow):
         
         syncview.sync.connect(self.onSync)
         
-    def getFtp(self, host):
-        sync = syncapp.get_ftp(False, host)
+    def getFtp(self, host, ssl):
+        sync = syncapp.get_ftp(ssl, host)
         
         sync.notify.downloadProgress.connect(self.onDownloadProgress)
         sync.notify.downloadingFile.connect(self.onDownloadingFile)
@@ -78,9 +79,9 @@ class SyncWindow(QMainWindow):
         
         return sync
    
-    @Slot(str, str, str)
-    def onLogin(self, host, username, passwd):
-        self.sync = self.getFtp(host)
+    @Slot(str, str, str, bool)
+    def onLogin(self, host, username, passwd, ssl):
+        self.sync = self.getFtp(host, ssl)
         
         try:
             loginResponse = self.sync.login(username, passwd)
@@ -146,7 +147,7 @@ class View(QWidget):
 
 
 class LoginView(View):
-    login = Signal((str, str, str,))
+    login = Signal((str, str, str, bool,))
     
     def __init__(self, parent=None):
         super(LoginView, self).__init__(parent)
@@ -158,15 +159,21 @@ class LoginView(View):
     def createLayouts(self):
         mainLayout = QHBoxLayout()
         fieldsLayout = QVBoxLayout()
+        ftpInfoLayout = QHBoxLayout()
         buttonLayout = QHBoxLayout()
         
         mainLayout.addStretch(20)
         
         fieldsLayout.addStretch(80)
-        #fieldsLayout.addWidget(self.iconLabel)
         fieldsLayout.addWidget(self.line)
         fieldsLayout.addStretch(20)
-        fieldsLayout.addWidget(self.hostLabel)
+        
+        ftpInfoLayout.addWidget(self.hostLabel, 50, Qt.AlignLeft)
+        ftpInfoLayout.addStretch(20)
+        ftpInfoLayout.addWidget(self.sslLabel, 20, Qt.AlignRight)
+        ftpInfoLayout.addWidget(self.sslCheck, 10, Qt.AlignRight)
+        
+        fieldsLayout.addLayout(ftpInfoLayout)
         fieldsLayout.addWidget(self.hostEdit)
         fieldsLayout.addWidget(self.usernameLabel)
         fieldsLayout.addWidget(self.usernameEdit)
@@ -193,10 +200,14 @@ class LoginView(View):
         
         self.hostLabel = QLabel(self)
         self.hostEdit = QLineEdit(self)
+        self.sslLabel = QLabel(self)
+        self.sslCheck = QCheckBox(self)     
         self.hostLabel.setText('FTP Location')
         self.hostLabel.setFont(labelsFont)
         self.hostEdit.setFixedWidth(fieldsWidth)
         self.hostEdit.setFont(fieldsFont)
+        self.sslLabel.setText('SSL')
+        self.sslLabel.setFont(labelsFont)
         
         self.usernameLabel = QLabel(self)
         self.usernameEdit = QLineEdit(self)
@@ -226,11 +237,16 @@ class LoginView(View):
         self.usernameEdit.setText(settings.value(SettingsKeys['username'], ''))
         self.passwdEdit.setText(settings.value(SettingsKeys['passwd'], ''))
         
+        ssl = settings.value(SettingsKeys['ssl'], u'true') 
+        ssl = True if ssl == u'true' else False
+        self.sslCheck.setChecked(ssl)
+        
     @Slot()
     def onLoginClicked(self):
         host = self.hostEdit.text()
         username = self.usernameEdit.text()
         passwd = self.passwdEdit.text()
+        ssl = self.sslCheck.isChecked()
         
         print 'Logging in: %s, %s, %s' % (host, username, passwd)
         
@@ -240,9 +256,10 @@ class LoginView(View):
             settings.setValue(SettingsKeys['host'], host)
             settings.setValue(SettingsKeys['username'], username)
             settings.setValue(SettingsKeys['passwd'], passwd)
+            settings.setValue(SettingsKeys['ssl'], ssl)
             
             self.setEnabled(False)
-            self.login.emit(host.strip(), username, passwd)
+            self.login.emit(host.strip(), username, passwd, ssl)
             
     @Slot()
     def onFailedLogIn(self):
@@ -269,7 +286,6 @@ class SyncView(View):
         mainLayout.addStretch(10)
         
         fieldsLayout.addStretch(50)
-        #fieldsLayout.addWidget(self.iconLabel)
         fieldsLayout.addWidget(self.line)
         
         fieldsLayout.addWidget(self.localdirLabel) 
