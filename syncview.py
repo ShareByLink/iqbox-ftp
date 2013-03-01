@@ -324,8 +324,9 @@ class SyncView(View):
         print 'Localdir', localdir
         if len(localdir) > 0:
             localdir = os.path.join(localdir, 'FTPSync')
+            localdir = QDir.toNativeSeparators(localdir)
             get_settings().setValue(SettingsKeys['localdir'], localdir)
-            self.localdirEdit.setText(QDir.toNativeSeparators(localdir))
+            self.localdirEdit.setText(localdir)
             
     @Slot()
     def onSyncClicked(self):
