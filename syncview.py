@@ -1,8 +1,9 @@
 import os
 import sys
 import platform
+import traceback
 
-from PySide.QtCore import Qt, Slot, Signal, QSettings, QDir
+from PySide.QtCore import Qt, Slot, Signal, QSettings, QDir, QThread
 from PySide.QtGui import QWidget, QMainWindow, QApplication, QCheckBox
 from PySide.QtGui import QPushButton, QLabel, QLineEdit, QFont, QFileDialog
 from PySide.QtGui import QHBoxLayout, QVBoxLayout, QPixmap, QFrame, QIcon, QSystemTrayIcon
@@ -48,6 +49,7 @@ class SyncWindow(QMainWindow):
     """
     
     failedLogIn = Signal()
+    doCheckout = Signal((bool,))
     
     def __init__(self, parent=None):
         super(SyncWindow, self).__init__(parent)
@@ -102,11 +104,17 @@ class SyncWindow(QMainWindow):
         :param ssl: Indicates whether the FTP needs SSL support
         """
         
-        sync = syncapp.get_ftp(ssl, host)
+        self.ftpThread = QThread()
+        sync = syncapp.FtpObject(host, ssl)
         
-        sync.notify.downloadProgress.connect(self.onDownloadProgress)
-        sync.notify.downloadingFile.connect(self.onDownloadingFile)
-        sync.notify.checkoutDone.connect(self.onCheckoutDone)
+        sync.downloadProgress.connect(self.onDownloadProgress)
+        sync.downloadingFile.connect(self.onDownloadingFile)
+        sync.checkoutDone.connect(self.onCheckoutDone)
+        self.doCheckout.connect(sync.checkout)
+        QApplication.instance().lastWindowClosed.connect(self.ftpThread.quit)
+        
+        sync.moveToThread(self.ftpThread)
+        self.ftpThread.start()
         
         return sync
    
@@ -120,11 +128,14 @@ class SyncWindow(QMainWindow):
         :param passwd: Password to log in into the FTP server
         :param ssl: Indicates whether the FTP needs SSL support
         """
+        
         self.sync = self.getFtp(host, ssl)
         
         try:
-            loginResponse = self.sync.login(username, passwd)
+            loginResponse = self.sync.ftp.login(username, passwd)
         except:
+            info = traceback.format_exception(*sys.exc_info())
+            for i in info: sys.stderr.write(i)
             self.failedLogIn.emit()
         else:
             print loginResponse
@@ -143,7 +154,7 @@ class SyncWindow(QMainWindow):
         """
         
         self.sync.setLocalDir(localdir)
-        self.sync.checkout()
+        self.doCheckout.emit(True)
 
     @Slot(int, int)
     def onDownloadProgress(self, total, progress):
@@ -171,12 +182,13 @@ class SyncWindow(QMainWindow):
         self.currentFile = filename
     
     @Slot()
-    def onCheckoutDone(self):
+    def onCheckoutDone(self, checked_files):
         """
         Slot. Will be called when the application finished syncing 
         with the FTP server.
         """
         
+        print 'Done:', checked_files
         self.statusBar().showMessage('Sync Completed')
 
 class View(QWidget):

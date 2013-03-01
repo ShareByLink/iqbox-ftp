@@ -2,10 +2,9 @@ import os
 import sys
 import ftplib
 import datetime
-import threading
-import time
+import traceback
 
-from PySide.QtCore import QObject, Signal, Slot, QThread, QCoreApplication
+from PySide.QtCore import QObject, Signal, Slot
 
 
 dt = datetime.datetime
@@ -35,7 +34,6 @@ class FtpObject(QObject):
             class FtpApp(FTP):
                 
                 def __init__(self):
-                    print 'Init parent'
                     FTP.__init__(self, host)
                     
             return FtpApp()
@@ -68,7 +66,7 @@ class FtpObject(QObject):
         checked_files = dict()
 
         # Sets '/' as initial directory and initializes `downloading_dir`
-        self.cwd('/')
+        self.ftp.cwd('/')
         downloading_dir = self.currentdir
             
         while True:
@@ -76,6 +74,10 @@ class FtpObject(QObject):
             # current directory `downloading_dir`.
             dir_subdirs = self.getDirs(downloading_dir)
             dirfiles = self.getFiles(downloading_dir)
+            
+            print 'Dirs:', dir_subdirs
+            print 'Files:', dirfiles
+            print 'Dir:', downloading_dir
            
             # Leading '/' in `downloading_dir` breaks the `os.path.join` call
             localdir = os.path.join(self.localdir, downloading_dir[1:])
@@ -131,13 +133,15 @@ class FtpObject(QObject):
         
         try:
             nlst = self.ftp.nlst(path)
-            dirs = self.ftp.getDirs(path)
+            dirs = self.getDirs(path)
             
             # Files are items in nlst that are not in dirs
             files = [item for item in nlst if os.path.basename(item) not in dirs]
             
             return files
         except:
+            info = traceback.format_exception(*sys.exc_info())
+            for i in info: sys.stderr.write(i)
             return []
              
     def getDirs(self, path):
@@ -210,7 +214,7 @@ class FtpObject(QObject):
             print 'Downloading: %s' % filename
             self.downloadingFile.emit(filename)
             self.downloading = f
-            self.download_size = int(self.sendcmd('SIZE %s' % filename).split(' ')[-1])
+            self.download_size = int(self.ftp.sendcmd('SIZE %s' % filename).split(' ')[-1])
             self.download_progress = 0
             self.ftp.retrbinary('RETR %s' % filename, handleChunk)
             
@@ -232,8 +236,6 @@ class FtpObject(QObject):
         
     
 if __name__ == '__main__':
-
-    
     app3 = FtpObject('ops.osop.com.pa', False)
     app3.setLocalDir('/home/sergio/Documents/FTPSync/mareas')
     print app3.ftp.login('mareas', 'mareas123')
@@ -254,8 +256,4 @@ if __name__ == '__main__':
     print app2.ftp.login('sergio', 'lopikljh')
     print 'Dirs in "/": %s' % app2.getDirs('/')
     print 'Files in "/": %s' % app2.getFiles('/')
-
-
-
-    print 'Goin into event loop'
 
