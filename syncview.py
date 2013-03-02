@@ -3,7 +3,7 @@ import sys
 import platform
 import traceback
 
-from PySide.QtCore import Qt, Slot, Signal, QSettings, QDir, QThread
+from PySide.QtCore import Qt, Slot, Signal, QSettings, QDir, QThread, QTimer
 from PySide.QtGui import QWidget, QMainWindow, QApplication, QCheckBox
 from PySide.QtGui import QPushButton, QLabel, QLineEdit, QFont, QFileDialog, QMessageBox
 from PySide.QtGui import QHBoxLayout, QVBoxLayout, QPixmap, QFrame, QIcon, QSystemTrayIcon
@@ -194,14 +194,18 @@ class SyncWindow(QMainWindow):
         self.currentFile = filename
     
     @Slot()
-    def onCheckoutDone(self, checked_files):
+    def onCheckoutDone(self):
         """
         Slot. Will be called when the application finished syncing 
         with the FTP server.
         """
         
-        print 'Done:', checked_files
-        self.statusBar().showMessage('Sync Completed')
+        self.statusBar().showMessage('Sync completed')
+        QTimer.singleShot(5000, self.clearMessage)
+        
+    @Slot()
+    def clearMessage(self):
+        self.statusBar().showMessage('')
 
 class View(QWidget):
     """Base `View` class. Defines behavior common in all views"""
@@ -343,6 +347,7 @@ class LoginView(View):
         self.passwdEdit.setFixedWidth(fieldsWidth)
         self.passwdEdit.setEchoMode(QLineEdit.Password)
         self.passwdEdit.setFont(editsFont)
+        self.passwdEdit.returnPressed.connect(self.onLoginClicked)
         
         self.loginButton = QPushButton(self)
         self.loginButton.setText('Login')
@@ -486,7 +491,8 @@ class SyncView(View):
             # If `localdir`'s value is good, store it using a `QSettings` object
             # and triggers a sync request.
             # Careful with '\' separators on Windows.
-            localdir = os.path.join(localdir, 'FTPSync')
+            if not localdir.endswith('FTPSync'):
+                localdir = os.path.join(localdir, 'FTPSync')
             localdir = QDir.toNativeSeparators(localdir)
             get_settings().setValue(SettingsKeys['localdir'], localdir)
             self.localdirEdit.setText(localdir)

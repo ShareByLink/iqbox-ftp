@@ -1,11 +1,12 @@
 import os
 import sys
-import ftplib
 import datetime
 import traceback
+from ftplib import FTP_TLS, FTP
 
 from PySide.QtCore import QObject, Signal, Slot
 
+import filebase
 
 dt = datetime.datetime
  
@@ -14,32 +15,14 @@ class FtpObject(QObject):
     
     downloadProgress = Signal((int, int,))
     downloadingFile = Signal((str,))
-    checkoutDone = Signal((dict,))
+    checkoutDone = Signal()
+    checkedFile = Signal((str, dt,))
  
     def __init__(self, host, ssl, parent=None):
         super(FtpObject, self).__init__(parent)
-    
+        
         self.localdir = ''
-        
-        def ftp():
-            """
-            This function creates an returns a `FtpApp` type object, which
-            inherites from  either `ftplib.FTP_TLS` or `ftplib.FTP` given the `ssl` parameter.
-            
-            :param ssl: Select whether the FTP object needs TLS support or not
-            :param args: Arguments that will be passed to the `SyncApp` constructor
-            """
-            
-            FTP = ftplib.FTP_TLS if ssl is True else ftplib.FTP
-            class FtpApp(FTP):
-                
-                def __init__(self):
-                    FTP.__init__(self, host)
-                    
-            return FtpApp()
-            
-        
-        self.ftp = ftp()
+        self.ftp = FTP_TLS(host) if ssl is True else FTP(host)
 
     @property
     def currentdir(self):
@@ -63,7 +46,7 @@ class FtpObject(QObject):
         # Handy lists to keep track of the checkout process.
         # These lists contain absolute paths only.
         checked_dirs = list()
-        checked_files = dict()
+        filebase.clear_server_temp()
 
         # Sets '/' as initial directory and initializes `downloading_dir`
         self.ftp.cwd('/')
@@ -74,10 +57,6 @@ class FtpObject(QObject):
             # current directory `downloading_dir`.
             dir_subdirs = self.getDirs(downloading_dir)
             dirfiles = self.getFiles(downloading_dir)
-            
-            print 'Dirs:', dir_subdirs
-            print 'Files:', dirfiles
-            print 'Dir:', downloading_dir
            
             # Leading '/' in `downloading_dir` breaks the `os.path.join` call
             localdir = os.path.join(self.localdir, downloading_dir[1:])
@@ -90,10 +69,14 @@ class FtpObject(QObject):
                 # `serverpath` is the absolute path of the file on the server,
                 # download it only if it hasn't been already downloaded
                 serverpath = os.path.join(downloading_dir, file_)
-                if serverpath not in checked_files:
+                server_file = filebase.getFile(filebase.SERVER_TEMP, serverpath)
+                #if serverpath not in checked_files:
+                if not server_file.exists():
                     if download is True:
                         self.downloadFile(serverpath)
-                    checked_files[serverpath] = self.lastModified(serverpath)
+                    server_file.mdate = self.lastModified(serverpath)
+                    print 'Saving:', server_file.save()
+                    self.checkedFile.emit(server_file.path, server_file.mdate)
                         
             dir_ready = True
             for dir_ in dir_subdirs:
@@ -120,8 +103,7 @@ class FtpObject(QObject):
                     checked_dirs.append(downloading_dir)
                     downloading_dir = os.path.dirname(downloading_dir)
                     
-        self.checkoutDone.emit(checked_files)
-        return checked_files
+        self.checkoutDone.emit()
                 
     def getFiles(self, path):
         """
@@ -239,21 +221,53 @@ if __name__ == '__main__':
     app3 = FtpObject('ops.osop.com.pa', False)
     app3.setLocalDir('/home/sergio/Documents/FTPSync/mareas')
     print app3.ftp.login('mareas', 'mareas123')
+    time = app3.lastModified('/test.txt')
+    print 'Mareas UTC: %s, Local: %s' % (time, time - datetime.timedelta(hours=5))
+    cmd = 'MDTM %s %s' % (dt.utcnow().strftime('%Y%m%d%H%M%S'), '/test.txt')
+    print cmd
+    print app3.ftp.sendcmd(cmd)
+    time = app3.lastModified('/test.txt')
+    print 'UTC: %s, Local: %s' % (time, time - datetime.timedelta(hours=5))
     
     print 'Dirs in "/": %s' % app3.getDirs('/')
     print 'Files in "/": %s' % app3.getFiles('/')
-
-    app1 = FtpObject('ftp.iqstorage.com', True)
-    app1.setLocalDir('/home/sergio/Documents/FTPSync/iq')
-    app1.ftp.login('testuser', 'test')
-    time = app1.lastModified('test2/2.15 MB Download.bin')
-    print 'UTC: %s, Local: %s' % (time, time - datetime.timedelta(hours=5))
-    print 'Dirs in "/": %s' % app1.getDirs('/')
-    print 'Files in "/": %s' % app1.getFiles('/')
-
+    
+    app3.checkout(False)
+    
     app2 = FtpObject('10.18.210.193', False)
     app2.setLocalDir('/home/sergio/Documents/FTPSync/book')
     print app2.ftp.login('sergio', 'lopikljh')
+    
+    time = app2.lastModified('/Public/Files/Qt/time.txt')
+    print 'Book UTC: %s, Local: %s' % (time, time - datetime.timedelta(hours=5))
+    
+    cmd = 'MDTM %s %s' % (dt.utcnow().strftime('%Y%m%d%H%M%S'), '/Public/Files/Qt/time.txt')
+    print cmd
+    app2.ftp.sendcmd(cmd)
+    time = app2.lastModified('/Public/Files/Qt/time.txt')
+    print 'UTC: %s, Local: %s' % (time, time - datetime.timedelta(hours=5))
+    
     print 'Dirs in "/": %s' % app2.getDirs('/')
     print 'Files in "/": %s' % app2.getFiles('/')
+
+    app1 = FtpObject('ftp7.iqstorage.com', True)
+    app1.ftp.login('serpulga', 'iqstorage')
+    app1.setLocalDir('/home/sergio/Documents/FTPSync/iq')
+    time = app1.lastModified('/4.89 MB Download.bin')
+    
+    print 'Dirs in "/": %s' % app1.getDirs('/')
+    print 'Files in "/": %s' % app1.getFiles('/')
+    
+    print 'IQ UTC: %s, Local: %s' % (time, time - datetime.timedelta(hours=5))
+    
+    cmd = 'MDTM %s %s' % (dt.utcnow().strftime('%Y%m%d%H%M%S'), '/4.89 MB Download.bin')
+    print cmd
+    app1.ftp.sendcmd(cmd)
+    time = app1.lastModified('/4.89 MB Download.bin')
+    print 'UTC: %s, Local: %s' % (time, time - datetime.timedelta(hours=5))
+    
+
+    
+
+
 
