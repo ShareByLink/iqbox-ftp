@@ -10,6 +10,7 @@ from PySide.QtGui import QHBoxLayout, QVBoxLayout, QPixmap, QFrame, QIcon, QSyst
 
 import resources
 import syncapp
+import crypt
 
 
 resources.qInitResources()
@@ -360,7 +361,7 @@ class LoginView(View):
         
         self.hostEdit.setText(settings.value(SettingsKeys['host'], ''))
         self.usernameEdit.setText(settings.value(SettingsKeys['username'], ''))
-        self.passwdEdit.setText(settings.value(SettingsKeys['passwd'], ''))
+        self.passwdEdit.setText(crypt.decrypt(settings.value(SettingsKeys['passwd'], '')))
         
         # Unicode to boolean conversion
         ssl = settings.value(SettingsKeys['ssl'], u'true') 
@@ -388,7 +389,7 @@ class LoginView(View):
             
             settings.setValue(SettingsKeys['host'], host)
             settings.setValue(SettingsKeys['username'], username)
-            settings.setValue(SettingsKeys['passwd'], passwd)
+            settings.setValue(SettingsKeys['passwd'], crypt.encrypt(passwd))
             settings.setValue(SettingsKeys['ssl'], ssl)
             
             self.setEnabled(False)
