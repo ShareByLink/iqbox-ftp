@@ -493,7 +493,8 @@ class SyncView(View):
             # and triggers a sync request.
             # Careful with '\' separators on Windows.
             if not localdir.endswith('FTPSync'):
-                localdir = os.path.join(localdir, 'FTPSync')
+                pass
+                #localdir = os.path.join(localdir, 'FTPSync')
             localdir = QDir.toNativeSeparators(localdir)
             get_settings().setValue(SettingsKeys['localdir'], localdir)
             self.localdirEdit.setText(localdir)

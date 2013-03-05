@@ -4,9 +4,9 @@ import datetime
 import traceback
 from ftplib import FTP_TLS, FTP
 
-from PySide.QtCore import QObject, Signal, Slot
+from PySide.QtCore import QObject, Signal, Slot, QTimer
 
-import filebase
+from filebase import File, session
 
 dt = datetime.datetime
  
@@ -17,7 +17,10 @@ class FtpObject(QObject):
     downloadingFile = Signal((str,))
     checkoutDone = Signal()
     checkedFile = Signal((str, dt,))
- 
+    fileDeleted = Signal((str,))
+    fileAdded = Signal((str,))
+    fileChanged = Signal((str,))
+    
     def __init__(self, host, ssl, parent=None):
         """
         Initializes parent class and attributes. Decides
@@ -53,7 +56,7 @@ class FtpObject(QObject):
             os.makedirs(self.localdir)
     
     @Slot(bool)
-    def checkout(self, download=True):
+    def checkout(self, download=False):
         """
         Recursively checks out all files on the server.
         Returns a dictionary of files on the server with their last modified date.
@@ -61,25 +64,28 @@ class FtpObject(QObject):
         :param download: Indicates whether or not the files should be downloaded
         """
         
-        # Handy lists to keep track of the checkout process.
-        # These lists contain absolute paths only.
+        # Handy list to keep track of the checkout process.
+        # This lists contain absolute paths only.
         checked_dirs = list()
-        filebase.clear_server_temp()
 
         # Sets '/' as initial directory and initializes `downloading_dir`
         self.ftp.cwd('/')
         downloading_dir = self.currentdir
+        check_date = dt.utcnow()
             
         while True:
             # Gets the list of sub directories and files inside the 
             # current directory `downloading_dir`.
             dir_subdirs = self.getDirs(downloading_dir)
             dirfiles = self.getFiles(downloading_dir)
+            
+            print 'Subs %s' % dir_subdirs
+            print 'Files %s' % dirfiles
+            print 'Dir %s' % downloading_dir
            
             # Leading '/' in `downloading_dir` breaks the `os.path.join` call
             localdir = os.path.join(self.localdir, downloading_dir[1:])
             if not os.path.exists(localdir):
-                print 'Local dir: %s' % localdir
                 # Creates the directory if it doesn't already exists.
                 os.makedirs(localdir)
 
@@ -87,15 +93,28 @@ class FtpObject(QObject):
                 # `serverpath` is the absolute path of the file on the server,
                 # download it only if it hasn't been already downloaded
                 serverpath = os.path.join(downloading_dir, file_)
-                server_file = filebase.getFile(filebase.SERVER_TEMP, serverpath)
-                #if serverpath not in checked_files:
-                if not server_file.exists():
+                server_file = File.getFile(serverpath)
+
+                if server_file.last_checked_server != check_date:
+                    # Do this process only once per file
                     if download is True:
                         self.downloadFile(serverpath)
-                    server_file.mdate = self.lastModified(serverpath)
-                    print 'Saving:', server_file.save()
-                    self.checkedFile.emit(server_file.path, server_file.mdate)
                         
+                    just_added = not server_file.inserver
+                    lastmdate = server_file.servermdate
+                    
+                    server_file.inserver = True
+                    server_file.last_checked_server = check_date
+                    server_file.servermdate = self.lastModified(serverpath)
+                    
+                    # Emit the signals after the attributes has been set
+                    if just_added is True:
+                        self.fileAdded.emit(serverpath)
+                    elif server_file.servermdate > lastmdate:
+                        self.fileChanged.emit(serverpath)
+
+                    self.checkedFile.emit(server_file.path, server_file.servermdate)
+            
             dir_ready = True
             for dir_ in dir_subdirs:
                 # `dirpath` is the absolute path of the subdirectory on the server,
@@ -111,7 +130,7 @@ class FtpObject(QObject):
                     
             if dir_ready is True:
                 # All subdirectories of `downloading_dir` are already in `checked_dirs`
-                if self.currentdir == '/':
+                if downloading_dir == '/':
                     # All directories ready and at '/', means checkout is complete
                     break
                     
@@ -121,6 +140,13 @@ class FtpObject(QObject):
                     checked_dirs.append(downloading_dir)
                     downloading_dir = os.path.dirname(downloading_dir)
                     
+        # Deleted files are the ones whose `last_checked_server` attribute 
+        # didn't get updated in the recursive run.
+        deleted = session.query(File).filter(File.last_checked_server < check_date).filter(File.inserver == True)
+        for file_ in deleted.all():
+            self.fileDeleted.emit(file_.path)
+        
+        #QTimer.singleShot(5000, self.checkout)
         self.checkoutDone.emit()
                 
     def getFiles(self, path):
@@ -142,7 +168,6 @@ class FtpObject(QObject):
         except:
             info = traceback.format_exception(*sys.exc_info())
             for i in info: sys.stderr.write(i)
-            return []
              
     def getDirs(self, path):
         """
@@ -233,6 +258,19 @@ class FtpObject(QObject):
         dateformat = '%Y%m%d%H%M%S.%f' if '.' in timestamp else '%Y%m%d%H%M%S'
         
         return dt.strptime(timestamp, dateformat)
+    
+    @Slot(str)
+    def added(self, serverpath):
+        print 'Added:', serverpath
+        
+    @Slot(str)
+    def changed(self, serverpath):
+        print 'Changed:', serverpath
+        
+    @Slot(str)
+    def deleted(self, serverpath):
+        File.getFile(serverpath).inserver = False
+        print 'Deleted:', serverpath
         
     
 if __name__ == '__main__':

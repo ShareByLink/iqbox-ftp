@@ -4,8 +4,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.exc import MultipleResultsFound, NoResultFound
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import create_engine, Column, Integer, String, DateTime
-from PySide.QtCore import QObject
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean
+
 
 dt = datetime.datetime
 engine = create_engine('sqlite:///filestore.db', echo=False)
@@ -13,83 +13,81 @@ Session = sessionmaker(bind=engine)
 Base = declarative_base()
 session = Session()
 
-SERVER = 'server'
-SERVER_TEMP = 'server_temp'
-LOCAL = 'local'
-LOCAL_TEMP = 'local_temp'
 
-CLASS_NAMES = dict(
-    server='ServerFile',
-    server_temp='ServerTempFile',
-    local='LocalFile',
-    local_temp='LocalTempFile')
-
-_created = dict()
-
-def clear_server_temp():
-    session.query(getFile(SERVER_TEMP).__class__).delete()
-
-def getFile(location, *args):
+class File(Base):
     
-    if location in _created:
-        return _created[location].__call__(*args)
-    
-    __tablename__ = location
+    __tablename__ = 'files'
     id = Column(Integer, primary_key=True)
     path = Column(String, unique=True)
-    mdate = Column(DateTime)
+    localmdate = Column(DateTime)
+    servermdate = Column(DateTime)
+    last_checked_local = Column(DateTime) 
+    last_checked_server = Column(DateTime)
+    inserver = Column(Boolean)
+    inlocal = Column(Boolean)
     
-    def __init__(self, path='', mdate=None):
+    def __init__(
+            self, path='', localmdate=None, servermdate=None,
+            last_checked_local=None, last_checked_server=None, 
+            inserver=False, inlocal=False):
+        
         self.path = path
-        self.mdate = mdate
+        self.localmdate = localmdate
+        self.servermdate = servermdate
+        self.last_checked_local = last_checked_local
+        self.last_checked_server = last_checked_server
+        self.inserver = inserver
+        self.inlocal = inlocal
         
     def __repr__(self):
-        return '<File in %s ("%s", "%s")>' % (
-                    self.__tablename__, self.path, self.mdate)
-         
-    def exists(self):
+        return '<File in %s ("%s", Local: "%s", Server: "%s")>' % (
+                    self.__tablename__, self.path, self.inlocatl, self.inserver)
+        
+    @classmethod
+    def getFile(cls, path):
+        """
+        Returns a `File` instance by fetching it from the database
+        using the `path` parameter, if such entry doesn't exist, this
+        function adds it to the database and returns the added instance.
+        
+        :param path: `path` attribute of the `File` instance that will be fetched.
+        """
+        
+        session.commit()
         try:
-            session.query(self.__class__).filter(self.__class__.path == self.path).one()
-            return True
+            newfile = session.query(cls).filter_by(path=path).one()
+            return newfile
         except MultipleResultsFound:
-            print 'More than one result for "%s", database might be courrupted' % self.path
-            return True
+            print 'More than one result for "%s", database might be corrupted' % path
+            return None
         except NoResultFound:
-            return False
-            
-    def save(self):
-        try:
-            session.add(self)
-            print self
-            return True
-        except IntegrityError:
-            return False
-    
-    cls = CLASS_NAMES[location]
-    
-    file_attrs = dict(
-        id=id, path=path, mdate=mdate, save=save, __init__=__init__,
-        __repr__=__repr__, exists=exists, __tablename__=__tablename__)
-    
-    File = type(cls, (Base,), file_attrs)
-    _created[location] = File
-    
-    return File(*args)
+            newfile = File(path)
+            session.add(newfile)
+            return newfile
+
 
 Base.metadata.create_all(engine)
 
 if __name__ == '__main__':
-    serverfile = getFile(SERVER, '/Public/test.txt', dt.utcnow())
-    print serverfile.exists()
-
-    localfile = getFile(LOCAL, '/home/sergio/test2.txt', dt.utcnow())
-    print localfile.exists()
-   
-    print serverfile.metadata.tables
+    localfile = File.getFile('Public/Something')
+    print localfile.inserver
+    localfile.inserver = True
     
-    print session.query(serverfile.__class__).all()
-    print session.query(localfile.__class__).all()
-    print session.query(serverfile.__class__).all()
+    myfile = File.getFile('Public/New')
+    print myfile.last_checked_local, myfile.last_checked_server, myfile.inlocal, myfile.inserver
+    
+    serverfile = File.getFile('Public/Something/Else')
+    print serverfile.inlocal
+    serverfile.inlocal = True
+    
+    otherfile = File.getFile('Public/Other/File')
+    print otherfile
+    otherfile.inlocal = True
+    otherfile.inserver = True
+    print otherfile.inlocal, otherfile.inserver
+    
+
+    print session.query(File).all()
     
     
     session.commit()

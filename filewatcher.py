@@ -1,28 +1,96 @@
 import os
 import sys
 import datetime
-import traceback
+
+from PySide.QtCore import QObject, QCoreApplication, Slot, Signal, QTimer
+
+import syncapp
+from filebase import File, session
 
 
 dt = datetime.datetime
 
 
-class FileWatcher(object):
+class FileWatcher(QObject):
     
-    def __init__(self, localdir):
+    fileDeleted = Signal((str,))
+    fileAdded = Signal((str,))
+    fileChanged = Signal((str,))
+    finishedCheck = Signal((str,))
+    
+    def __init__(self, localdir, parent=None):
+        super(FileWatcher, self).__init__(parent)
         self.localdir = localdir
-        
+    
     def checkout(self):
-        print os.walk()
+        check_date = dt.utcnow()
+        for item in os.walk(self.localdir):
+            directory = item[0]
+            subfiles = item[-1]
+
+            for file_ in subfiles:
+                localpath = os.path.join(directory, file_)
+                serverpath = localpath.replace(self.localdir, '')
+                localmdate = dt.utcfromtimestamp(os.path.getmtime(localpath))
+                
+                local_file = File.getFile(serverpath)
+                just_added = not local_file.inlocal
+                lastmdate = local_file.localmdate
+                
+                local_file.inlocal = True
+                local_file.last_checked_local = check_date
+                local_file.localmdate = localmdate
+                
+                # Emit the signals after the attributes has been set
+                if just_added is True:
+                    self.fileAdded.emit(serverpath)
+                elif localmdate > lastmdate:
+                    self.fileChanged.emit(serverpath)
+
+        # Deleted files are the ones whose `last_checked_local` attribute 
+        # didn't get updated in the recursive run.
+        deleted = session.query(File).filter(File.last_checked_local < check_date).filter(File.inlocal == True)
+        for file_ in deleted.all():
+            self.fileDeleted.emit(file_.path)
+            
+        QTimer.singleShot(5000, self.checkout)
+            
+    @Slot(str)
+    def added(self, serverpath):
+        print 'Added:', serverpath
         
+    @Slot(str)
+    def changed(self, serverpath):
+        print 'Changed:', serverpath
+        
+    @Slot(str)
+    def deleted(self, serverpath):
+        File.getFile(serverpath).inserver = False
+        print 'Deleted:', serverpath
+    
+    @Slot()            
+    def checkServer(self):
+        serveronly = session.query(File).filter(File.inlocal == True).filter(File.inserver == False).all()
+
+        print serveronly
+
 
 if __name__ == '__main__':
-    checked_files = dict()
-    for item in os.walk('/home/sergio/Documents/FTPSync/'):
-        directory = item[0]
-        subfiles = item[-1]
-        for file_ in subfiles:
-            filepath = os.path.join(directory, file_)
-            checked_files[filepath] = dt.utcfromtimestamp(os.path.getmtime(filepath))
-            
-    print checked_files
+    coreapp = QCoreApplication(sys.argv)
+    watcher = FileWatcher('/home/sergio/Documents/FTPSync/mareas')
+    
+    app = syncapp.FtpObject('ops.osop.com.pa', False)
+    app.setLocalDir('/home/sergio/Documents/FTPSync/mareas')
+    print app.ftp.login('mareas', 'mareas123')
+    
+    app.fileAdded.connect(app.added)
+    app.fileChanged.connect(app.changed)
+    app.fileDeleted.connect(app.deleted)
+    
+    watcher.fileAdded.connect(watcher.added)
+    watcher.fileChanged.connect(watcher.changed)
+    watcher.fileDeleted.connect(watcher.deleted)
+    
+    watcher.checkout()
+    app.checkout(False)
+    coreapp.exec_()
