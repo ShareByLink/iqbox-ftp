@@ -19,6 +19,15 @@ class FtpObject(QObject):
     checkedFile = Signal((str, dt,))
  
     def __init__(self, host, ssl, parent=None):
+        """
+        Initializes parent class and attributes. Decides
+        whether to use `FTP_TLS` or `FTP` based on the `ssl` param.
+        
+        :param host: Location of the FTP server
+        :param ssl: Tells whether the FTP needs to support TLS or not
+        :param parent: Reference to a `QObject` instance a parent
+        """
+        
         super(FtpObject, self).__init__(parent)
         
         self.localdir = ''
@@ -26,9 +35,18 @@ class FtpObject(QObject):
 
     @property
     def currentdir(self):
+        """Returns the current working directory at the server"""
+        
         return self.ftp.pwd()
         
     def setLocalDir(self, localdir):
+        """
+        Sets the local directory used to stored all
+        downloaded files. Creates the directory if needed.
+        
+        :param localdir: Absolute path to local directory
+        """
+        
         self.localdir = localdir
         
         if not os.path.exists(self.localdir):
@@ -266,8 +284,4 @@ if __name__ == '__main__':
     time = app1.lastModified('/4.89 MB Download.bin')
     print 'UTC: %s, Local: %s' % (time, time - datetime.timedelta(hours=5))
     
-
     
-
-
-
