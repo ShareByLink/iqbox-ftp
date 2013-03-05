@@ -50,7 +50,7 @@ class FileWatcher(QObject):
         # Deleted files are the ones whose `last_checked_local` attribute 
         # didn't get updated in the recursive run.
         deleted = session.query(File).filter(File.last_checked_local < check_date).filter(File.inlocal == True)
-        for file_ in deleted.all():
+        for file_ in deleted:
             self.fileDeleted.emit(file_.path)
             
         QTimer.singleShot(5000, self.checkout)

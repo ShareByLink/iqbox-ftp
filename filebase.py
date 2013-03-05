@@ -41,7 +41,7 @@ class File(Base):
         
     def __repr__(self):
         return '<File in %s ("%s", Local: "%s", Server: "%s")>' % (
-                    self.__tablename__, self.path, self.inlocatl, self.inserver)
+                    self.__tablename__, self.path, self.inlocal, self.inserver)
         
     @classmethod
     def getFile(cls, path):
@@ -87,7 +87,8 @@ if __name__ == '__main__':
     print otherfile.inlocal, otherfile.inserver
     
 
-    print session.query(File).all()
+    for file_ in session.query(File):
+        print file_
     
     
     session.commit()
