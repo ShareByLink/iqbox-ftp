@@ -5,7 +5,7 @@ from itertools import izip, cycle
 
 sys.path.append(os.path.abspath(__file__))
 
-# Key should be en 'key' file
+# Key should be in `key` file
 with open('key', 'r') as keyfile:
     KEY = keyfile.read()
 
@@ -43,6 +43,7 @@ def _do_xor(data):
     :param data: String to be encoded
     """
     
+    # Recipe for xoring two strings. 
     xored = ''.join(chr(ord(x) ^ ord(y)) for (x,y) in izip(data, cycle(KEY)))
 
     return xored
