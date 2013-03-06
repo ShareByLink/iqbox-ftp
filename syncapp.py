@@ -5,8 +5,8 @@ import traceback
 from ftplib import FTP_TLS, FTP
 
 from PySide.QtCore import QObject, Signal, Slot, QTimer
+from filebase import File, Session
 
-from filebase import File, session
 
 dt = datetime.datetime
  
@@ -17,9 +17,11 @@ class FtpObject(QObject):
     downloadingFile = Signal((str,))
     checkoutDone = Signal()
     checkedFile = Signal((str, dt,))
-    fileDeleted = Signal((str,))
-    fileAdded = Signal((str,))
-    fileChanged = Signal((str,))
+    fileDeleted = Signal((str,str,))
+    fileAdded = Signal((str,str,))
+    fileChanged = Signal((str,str,))
+    
+    LOCATION = 'server'
     
     def __init__(self, host, ssl, parent=None):
         """
@@ -78,10 +80,6 @@ class FtpObject(QObject):
             # current directory `downloading_dir`.
             dir_subdirs = self.getDirs(downloading_dir)
             dirfiles = self.getFiles(downloading_dir)
-            
-            print 'Subs %s' % dir_subdirs
-            print 'Files %s' % dirfiles
-            print 'Dir %s' % downloading_dir
            
             # Leading '/' in `downloading_dir` breaks the `os.path.join` call
             localdir = os.path.join(self.localdir, downloading_dir[1:])
@@ -93,27 +91,27 @@ class FtpObject(QObject):
                 # `serverpath` is the absolute path of the file on the server,
                 # download it only if it hasn't been already downloaded
                 serverpath = os.path.join(downloading_dir, file_)
-                server_file = File.getFile(serverpath)
-
-                if server_file.last_checked_server != check_date:
-                    # Do this process only once per file
-                    if download is True:
-                        self.downloadFile(serverpath)
+                
+                with File.getFile(serverpath) as server_file:
+                    if server_file.last_checked_server != check_date:
+                        # Do this process only once per file
+                        if download is True:
+                            self.downloadFile(serverpath)
+                            
+                        just_added = not server_file.inserver
+                        lastmdate = server_file.servermdate
                         
-                    just_added = not server_file.inserver
-                    lastmdate = server_file.servermdate
-                    
-                    server_file.inserver = True
-                    server_file.last_checked_server = check_date
-                    server_file.servermdate = self.lastModified(serverpath)
-                    
-                    # Emit the signals after the attributes has been set
-                    if just_added is True:
-                        self.fileAdded.emit(serverpath)
-                    elif server_file.servermdate > lastmdate:
-                        self.fileChanged.emit(serverpath)
-
-                    self.checkedFile.emit(server_file.path, server_file.servermdate)
+                        server_file.inserver = True
+                        server_file.last_checked_server = check_date
+                        server_file.servermdate = self.lastModified(serverpath)
+                        
+                        # Emit the signals after the attributes has been set
+                        if just_added is True:
+                            self.fileAdded.emit(FtpObject.LOCATION, serverpath)
+                        elif server_file.servermdate > lastmdate:
+                            self.fileChanged.emit(FtpObject.LOCATION, serverpath)
+    
+                        self.checkedFile.emit(server_file.path, server_file.servermdate)
             
             dir_ready = True
             for dir_ in dir_subdirs:
@@ -142,11 +140,13 @@ class FtpObject(QObject):
                     
         # Deleted files are the ones whose `last_checked_server` attribute 
         # didn't get updated in the recursive run.
+        session = Session()
         deleted = session.query(File).filter(File.last_checked_server < check_date).filter(File.inserver == True)
         for file_ in deleted:
-            self.fileDeleted.emit(file_.path)
+            self.fileDeleted.emit(FtpObject.LOCATION, file_.path)
         
-        #QTimer.singleShot(5000, self.checkout)
+        session.commit()
+        QTimer.singleShot(5000, self.checkout)
         self.checkoutDone.emit()
                 
     def getFiles(self, path):
@@ -259,18 +259,19 @@ class FtpObject(QObject):
         
         return dt.strptime(timestamp, dateformat)
     
-    @Slot(str)
-    def added(self, serverpath):
-        print 'Added:', serverpath
+    @Slot(str, str)
+    def added(self, location, serverpath):
+        print 'Added Server:', serverpath
         
-    @Slot(str)
-    def changed(self, serverpath):
-        print 'Changed:', serverpath
+    @Slot(str, str)
+    def changed(self, location, serverpath):
+        print 'Changed Server:', serverpath
         
-    @Slot(str)
-    def deleted(self, serverpath):
-        File.getFile(serverpath).inserver = False
-        print 'Deleted:', serverpath
+    @Slot(str, str)
+    def deleted(self, location, serverpath):
+        with File.getFile(serverpath) as deleted:
+            deleted.inserver = False
+            print 'Deleted Server:', serverpath
         
     
 if __name__ == '__main__':

@@ -9,8 +9,11 @@ from PySide.QtGui import QPushButton, QLabel, QLineEdit, QFont, QFileDialog, QMe
 from PySide.QtGui import QHBoxLayout, QVBoxLayout, QPixmap, QFrame, QIcon, QSystemTrayIcon
 
 import resources
-import syncapp
+
 import crypt
+from syncapp import FtpObject
+from filewatcher import FileWatcher
+from synccore import SyncCore
 
 
 resources.qInitResources()
@@ -21,7 +24,8 @@ SettingsKeys = {
     'username': 'Username',
     'passwd': 'Password',
     'localdir': 'LocalDir',
-    'ssl': 'SSL'}
+    'ssl': 'SSL',
+    'synced': 'Synced'}
 
 # Selecting a good font family for each platform
 osname = platform.system()
@@ -44,7 +48,7 @@ def get_settings():
 
 class SyncWindow(QMainWindow):
     """
-    Applications main window. This class is meant to handle
+    Application main window. This class is meant to handle
     every widget needed by the application, as well as other
     needed global objects and behavior.
     """
@@ -107,8 +111,11 @@ class SyncWindow(QMainWindow):
         """
         
         self.ftpThread = QThread()
-        sync = syncapp.FtpObject(host, ssl)
+        sync = FtpObject(host, ssl)
         
+        sync.fileAdded.connect(sync.added)
+        sync.fileChanged.connect(sync.changed)
+        sync.fileDeleted.connect(sync.deleted)
         sync.downloadProgress.connect(self.onDownloadProgress)
         sync.downloadingFile.connect(self.onDownloadingFile)
         sync.checkoutDone.connect(self.onCheckoutDone)
@@ -167,7 +174,25 @@ class SyncWindow(QMainWindow):
         """
         
         self.sync.setLocalDir(localdir)
-        self.doCheckout.emit(True)
+        self.watcher = FileWatcher(localdir)
+        self.core = SyncCore(localdir)
+        
+        self.watcher.fileAdded.connect(self.watcher.added)
+        self.watcher.fileChanged.connect(self.watcher.changed)
+        self.watcher.fileDeleted.connect(self.watcher.deleted)
+        
+        self.watcher.fileAdded.connect(self.core.onAdded)
+        self.watcher.fileChanged.connect(self.core.onChanged)
+        self.watcher.fileDeleted.connect(self.core.onDeleted)
+        self.sync.fileAdded.connect(self.core.onAdded)
+        self.sync.fileChanged.connect(self.core.onChanged)
+        self.sync.fileDeleted.connect(self.core.onDeleted)
+        
+        self.core.moveToThread(self.ftpThread)
+        self.watcher.moveToThread(self.ftpThread)
+        
+        self.watcher.checkout(False)
+        self.doCheckout.emit(False)
 
     @Slot(int, int)
     def onDownloadProgress(self, total, progress):
@@ -201,12 +226,14 @@ class SyncWindow(QMainWindow):
         with the FTP server.
         """
         
+        get_settings().setValue(SettingsKeys['synced'], True)
         self.statusBar().showMessage('Sync completed')
         QTimer.singleShot(5000, self.clearMessage)
         
     @Slot()
     def clearMessage(self):
         self.statusBar().showMessage('')
+
 
 class View(QWidget):
     """Base `View` class. Defines behavior common in all views"""

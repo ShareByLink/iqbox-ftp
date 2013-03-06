@@ -5,7 +5,7 @@ import datetime
 from PySide.QtCore import QObject, QCoreApplication, Slot, Signal, QTimer
 
 import syncapp
-from filebase import File, session
+from filebase import File, Session
 
 
 dt = datetime.datetime
@@ -13,16 +13,18 @@ dt = datetime.datetime
 
 class FileWatcher(QObject):
     
-    fileDeleted = Signal((str,))
-    fileAdded = Signal((str,))
-    fileChanged = Signal((str,))
+    fileDeleted = Signal((str,str,))
+    fileAdded = Signal((str,str,))
+    fileChanged = Signal((str,str,))
     finishedCheck = Signal((str,))
+    
+    LOCATION = 'local'
     
     def __init__(self, localdir, parent=None):
         super(FileWatcher, self).__init__(parent)
         self.localdir = localdir
     
-    def checkout(self):
+    def checkout(self, trigger_events=True):
         check_date = dt.utcnow()
         for item in os.walk(self.localdir):
             directory = item[0]
@@ -33,46 +35,46 @@ class FileWatcher(QObject):
                 serverpath = localpath.replace(self.localdir, '')
                 localmdate = dt.utcfromtimestamp(os.path.getmtime(localpath))
                 
-                local_file = File.getFile(serverpath)
-                just_added = not local_file.inlocal
-                lastmdate = local_file.localmdate
-                
-                local_file.inlocal = True
-                local_file.last_checked_local = check_date
-                local_file.localmdate = localmdate
-                
-                # Emit the signals after the attributes has been set
-                if just_added is True:
-                    self.fileAdded.emit(serverpath)
-                elif localmdate > lastmdate:
-                    self.fileChanged.emit(serverpath)
+                with File.getFile(serverpath) as local_file:
+                    just_added = not local_file.inlocal
+                    lastmdate = local_file.localmdate
+                    
+                    local_file.inlocal = True
+                    local_file.last_checked_local = check_date
+                    local_file.localmdate = localmdate
+                    
+                    # Emit the signals after the attributes has been set
+                    if trigger_events is True:
+                        if just_added is True:
+                            self.fileAdded.emit(FileWatcher.LOCATION, serverpath)
+                        elif localmdate > lastmdate:
+                            self.fileChanged.emit(FileWatcher.LOCATION, serverpath)
 
         # Deleted files are the ones whose `last_checked_local` attribute 
         # didn't get updated in the recursive run.
+        session = Session()
         deleted = session.query(File).filter(File.last_checked_local < check_date).filter(File.inlocal == True)
         for file_ in deleted:
-            self.fileDeleted.emit(file_.path)
+            if trigger_events is True:
+                self.fileDeleted.emit(FileWatcher.LOCATION, file_.path)
             
+        session.commit()
         QTimer.singleShot(5000, self.checkout)
-            
+
     @Slot(str)
-    def added(self, serverpath):
+    def added(self, location, serverpath):
         print 'Added:', serverpath
         
     @Slot(str)
-    def changed(self, serverpath):
+    def changed(self, location, serverpath):
         print 'Changed:', serverpath
         
     @Slot(str)
-    def deleted(self, serverpath):
-        File.getFile(serverpath).inserver = False
-        print 'Deleted:', serverpath
-    
-    @Slot()            
-    def checkServer(self):
-        serveronly = session.query(File).filter(File.inlocal == True).filter(File.inserver == False).all()
+    def deleted(self, location, serverpath):
+        with File.getFile(serverpath) as deleted:
+            deleted.inlocal = False
 
-        print serveronly
+            print 'Deleted:', serverpath
 
 
 if __name__ == '__main__':
