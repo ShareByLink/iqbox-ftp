@@ -43,12 +43,13 @@ class FileWatcher(QObject):
                     local_file.last_checked_local = check_date
                     local_file.localmdate = localmdate
                     
-                    # Emit the signals after the attributes has been set
-                    if trigger_events is True:
-                        if just_added is True:
-                            self.fileAdded.emit(FileWatcher.LOCATION, serverpath)
-                        elif localmdate > lastmdate:
-                            self.fileChanged.emit(FileWatcher.LOCATION, serverpath)
+                # Emit the signals after the attributes has been set
+                # and committed.
+                if trigger_events is True:
+                    if just_added is True:
+                        self.fileAdded.emit(FileWatcher.LOCATION, serverpath)
+                    elif localmdate > lastmdate:
+                        self.fileChanged.emit(FileWatcher.LOCATION, serverpath)
 
         # Deleted files are the ones whose `last_checked_local` attribute 
         # didn't get updated in the recursive run.

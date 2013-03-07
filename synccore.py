@@ -2,13 +2,13 @@ import os
 import sys
 import traceback
 
-from filebase import File, FileAction, ActionQueue
+from filebase import File, FileAction, ActionQueue, Session
 from PySide.QtCore import QObject, Slot, Signal, QTimer
 
 
 class SyncCore(QObject):
     
-    deleteFile = Signal((str, str))
+    deleteServerFile = Signal((str, str))
     downloadFile = Signal((str,))
     uploadFile = Signal((str,))
     
@@ -22,17 +22,41 @@ class SyncCore(QObject):
         self.action_timer.timeout.connect(self.takeAction)
         self.action_timer.setInterval(5000)
         self.action_timer.start()
-        
+    
     @Slot()
     def takeAction(self):
-        print 'Actions: %s' % self.action_queue
         action = self.action_queue.next()
+        print 'Action: %s' % action 
         
-        if action.location == FileAction.LOCAL:
-            os.path.join(self.localdir, action.path)
-
         if action is not None:
+            path = action.path
+            do = action.action
+            location = action.location
+            
+            if do == FileAction.UPLOAD:
+                self.uploadFile.emit(path)
+            elif do == FileAction.DOWNLOAD:
+                self.downloadFile.emit(path)
+            elif do == FileAction.DELETE:
+                with File.getFile(path) as deleted_file:
+                    # `action.location` attribute only makes sense when deciding
+                    # whether to delete a file on the server or local.
+                    if location == FileAction.LOCAL:
+                        localpath = path[1:] if path.startswith('/') else path
+                        localpath = os.path.join(self.localdir, localpath)
+                        
+                        os.remove(localpath)
+                        deleted_file.inlocal = False
+                    elif location == FileAction.SERVER:
+                        self.deleteServerFile.emit(path)
+                        deleted_file.inserver = False
+
             self.action_queue.remove(action)
+            
+        if len(self.action_queue) == 0:
+            session = Session()
+            session.query(File).filter(File.inserver == False).filter(File.inlocal == False).delete()
+            session.commit()
         
     @Slot()
     def onChanged(self, location, serverpath):
@@ -49,8 +73,11 @@ class SyncCore(QObject):
            
             elif location == FileAction.LOCAL:
                 if changed_file.inserver:
-                    if changed_file.servermdate < changed_file.localmdate:
-                        action = FileAction(serverpath, FileAction.UPLOAD, FileAction.SERVER)
+                    try:
+                        if changed_file.servermdate < changed_file.localmdate:
+                            action = FileAction(serverpath, FileAction.UPLOAD, FileAction.SERVER)
+                    except:
+                        print 'Error:', changed_file, changed_file.servermdate, changed_file.localmdate
                         
                 else:
                     action = FileAction(serverpath, FileAction.UPLOAD, FileAction.SERVER)

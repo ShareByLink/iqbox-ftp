@@ -188,6 +188,10 @@ class SyncWindow(QMainWindow):
         self.sync.fileChanged.connect(self.core.onChanged)
         self.sync.fileDeleted.connect(self.core.onDeleted)
         
+        self.core.deleteServerFile.connect(self.sync.deleteFile)
+        self.core.downloadFile.connect(self.sync.downloadFile)
+        self.core.uploadFile.connect(self.sync.uploadFile)
+        
         self.core.moveToThread(self.ftpThread)
         self.watcher.moveToThread(self.ftpThread)
         

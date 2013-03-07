@@ -4,5 +4,5 @@ argh
 pathtools
 pyyaml
 brownie
-
-
+watchdog
+sqlalchemy

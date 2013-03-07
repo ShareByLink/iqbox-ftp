@@ -2,7 +2,7 @@ import os
 import sys
 import datetime
 import traceback
-from ftplib import FTP_TLS, FTP
+from ftplib import FTP_TLS, FTP, error_reply
 
 from PySide.QtCore import QObject, Signal, Slot, QTimer
 from filebase import File, Session
@@ -105,7 +105,8 @@ class FtpObject(QObject):
                         server_file.last_checked_server = check_date
                         server_file.servermdate = self.lastModified(serverpath)
                         
-                        # Emit the signals after the attributes has been set
+                        server_file.session.commit()
+                        # Emit the signals after the attributes has been set and committed
                         if just_added is True:
                             self.fileAdded.emit(FtpObject.LOCATION, serverpath)
                         elif server_file.servermdate > lastmdate:
@@ -197,7 +198,16 @@ class FtpObject(QObject):
         
         self.ftp.retrlines('LIST %s' % path, handleLine)
         return dirs
+    
+    def deleteFile(self, filename):
         
+        try:
+            self.ftp.delete(filename)
+            return True
+        except error_reply:
+            print 'Error deleting %s' % filename
+            return False
+            
     def downloadFile(self, filename, localpath=None):
         """
         Performs a binary download to the file `filename` located on the server.
@@ -241,7 +251,33 @@ class FtpObject(QObject):
             self.downloading = f
             self.download_size = int(self.ftp.sendcmd('SIZE %s' % filename).split(' ')[-1])
             self.download_progress = 0
-            self.ftp.retrbinary('RETR %s' % filename, handleChunk)
+
+            try:
+                self.ftp.retrbinary('RETR %s' % filename, handleChunk)
+                downloaded = True
+            except error_reply:
+                print 'Error downloading %s' % filename
+                downloaded = False
+                
+            return downloaded
+            
+    def uploadFile(self, filename):
+        
+        # Removes leading separator
+        file_ = filename[1:] if filename.startswith('/') else filename
+        localpath = os.path.join(self.localdir, file_)
+        
+        try:
+            # Uploads file and updates its modified date in the server
+            # to match the date in the local filesystem.
+            modified = File.getFile(filename).localmdate
+            'MDTM %s %s' % (dt.utcnow().strftime('%Y%m%d%H%M%S'), '/Public/Files/Qt/time.txt')
+            self.ftp.storbinary('STOR %s' % filename, open(localpath, 'rb'))
+            self.ftp.sendcmd('MDTM %s %s' % (modified.strftime('%Y%m%d%H%M%S'), filename))
+            return True
+        except error_reply:
+            print 'Error uploading %s' % filename
+            return False
             
     def lastModified(self, filename):
         """
@@ -290,6 +326,10 @@ if __name__ == '__main__':
     print 'Files in "/": %s' % app3.getFiles('/')
     
     app3.checkout(False)
+    
+    app3.uploadFile('/toupload.txt')
+    
+    raise SystemExit("Exit here please")
     
     app2 = FtpObject('10.18.210.193', False)
     app2.setLocalDir('/home/sergio/Documents/FTPSync/book')
