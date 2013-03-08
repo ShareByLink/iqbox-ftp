@@ -2,7 +2,7 @@ import os
 import sys
 import datetime
 import traceback
-from ftplib import FTP_TLS, FTP, error_reply
+from ftplib import FTP_TLS, FTP, error_reply, error_perm
 
 from PySide.QtCore import QObject, Signal, Slot, QTimer
 from filebase import File, Session
@@ -199,7 +199,13 @@ class FtpObject(QObject):
         self.ftp.retrlines('LIST %s' % path, handleLine)
         return dirs
     
+    @Slot(str)
     def deleteFile(self, filename):
+        """
+        Deletes the file `filename` to the server
+        
+        :param filename: Absolute or relative path to the file
+        """
         
         try:
             self.ftp.delete(filename)
@@ -207,7 +213,8 @@ class FtpObject(QObject):
         except error_reply:
             print 'Error deleting %s' % filename
             return False
-            
+         
+    @Slot(str, str)   
     def downloadFile(self, filename, localpath=None):
         """
         Performs a binary download to the file `filename` located on the server.
@@ -261,11 +268,21 @@ class FtpObject(QObject):
                 
             return downloaded
             
+    @Slot(str)
     def uploadFile(self, filename):
+        """
+        Uploads the file `filename` to the server, creating
+        the needed directories.
+        
+        :param filename: Absolute or relative path to the file
+        """
         
         # Removes leading separator
         file_ = filename[1:] if filename.startswith('/') else filename
         localpath = os.path.join(self.localdir, file_)
+        
+        # Creates the directory where the file will be uploaded to
+        self.mkpath(os.path.dirname(filename))
         
         try:
             # Uploads file and updates its modified date in the server
@@ -294,6 +311,37 @@ class FtpObject(QObject):
         dateformat = '%Y%m%d%H%M%S.%f' if '.' in timestamp else '%Y%m%d%H%M%S'
         
         return dt.strptime(timestamp, dateformat)
+    
+    def mkpath(self, path):
+        """
+        Creates the path `path` on the server by recursively 
+        created folders, if needed.
+        
+        :param path: Absolute path on the server to be created
+        """
+        try:
+            self.ftp.cwd(path)
+        except error_perm:
+            # `cwd` call failed. Need to create some folders
+            steps = path.split('/')
+            make_dir = '/' 
+            print steps
+            for step in steps:
+                if len(step) == 0:
+                    continue
+                make_dir += '%s/' % step
+                try:
+                    print make_dir
+                    self.ftp.mkd(make_dir)
+                except error_perm:
+                    # Probably already exists
+                    continue
+        else:
+            # `cwd` call succeed. No need to create
+            # any folders
+            self.ftp.cwd('/')
+            return
+        
     
     @Slot(str, str)
     def added(self, location, serverpath):
@@ -327,8 +375,9 @@ if __name__ == '__main__':
     
     app3.checkout(False)
     
-    app3.uploadFile('/toupload.txt')
-    
+    app3.mkpath('/folder/other/one/two/three/')
+    app3.mkpath('/folder/other/one/two/three/four')
+    app3.mkpath('/folder/other/one/two/three/four')
     raise SystemExit("Exit here please")
     
     app2 = FtpObject('10.18.210.193', False)

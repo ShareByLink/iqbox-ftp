@@ -8,7 +8,7 @@ from PySide.QtCore import QObject, Slot, Signal, QTimer
 
 class SyncCore(QObject):
     
-    deleteServerFile = Signal((str, str))
+    deleteServerFile = Signal((str,))
     downloadFile = Signal((str,))
     uploadFile = Signal((str,))
     
@@ -17,18 +17,14 @@ class SyncCore(QObject):
         
         self.localdir = localdir
         self.action_queue = ActionQueue()
-        self.action_timer = QTimer()
-        
-        self.action_timer.timeout.connect(self.takeAction)
-        self.action_timer.setInterval(5000)
-        self.action_timer.start()
+        QTimer.singleShot(0, self.takeAction)
     
     @Slot()
     def takeAction(self):
         action = self.action_queue.next()
-        print 'Action: %s' % action 
         
         if action is not None:
+            print 'Action: %s' % action 
             path = action.path
             do = action.action
             location = action.location
@@ -57,8 +53,14 @@ class SyncCore(QObject):
             session = Session()
             session.query(File).filter(File.inserver == False).filter(File.inlocal == False).delete()
             session.commit()
+            
+            wait_time = 5000            
+        else:
+            wait_time = 0
+            
+        QTimer.singleShot(wait_time, self.takeAction)
         
-    @Slot()
+    @Slot(str, str)
     def onChanged(self, location, serverpath):
         changed_file = File.getFile(serverpath)
         action = None
@@ -89,11 +91,20 @@ class SyncCore(QObject):
             for i in info: sys.stderr.write(i)
             
     
-    @Slot()
+    @Slot(str, str)
     def onAdded(self, location, serverpath):
-        self.onChanged(location, serverpath)
+        added_file = File.getFile(serverpath)
+        action = None
         
-    @Slot()
+        if location == FileAction.SERVER and not added_file.inlocal:
+            action = FileAction(serverpath, FileAction.DOWNLOAD, FileAction.LOCAL)
+        elif location == FileAction.LOCAL and not added_file.inserver:
+            action = FileAction(serverpath, FileAction.UPLOAD, FileAction.SERVER)
+            
+        if action is not None:
+            self.action_queue.add(action)
+        
+    @Slot(str, str)
     def onDeleted(self, location, serverpath):
         deleted_file = File.getFile(serverpath)
         action = None
