@@ -35,7 +35,7 @@ class FileWatcher(QObject):
                 serverpath = localpath.replace(self.localdir, '')
                 localmdate = dt.utcfromtimestamp(os.path.getmtime(localpath))
                 
-                with File.getFile(serverpath) as local_file:
+                with File.fromPath(serverpath) as local_file:
                     just_added = not local_file.inlocal
                     lastmdate = local_file.localmdate
                     
@@ -72,7 +72,7 @@ class FileWatcher(QObject):
         
     @Slot(str)
     def deleted(self, location, serverpath):
-        with File.getFile(serverpath) as deleted:
+        with File.fromPath(serverpath) as deleted:
             deleted.inlocal = False
 
             print 'Deleted:', serverpath

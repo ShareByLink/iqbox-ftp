@@ -117,7 +117,8 @@ class SyncWindow(QMainWindow):
         sync.fileChanged.connect(sync.changed)
         sync.fileDeleted.connect(sync.deleted)
         sync.downloadProgress.connect(self.onDownloadProgress)
-        sync.downloadingFile.connect(self.onDownloadingFile)
+        sync.uploadProgress.connect(self.onUploadProgress)
+        sync.fileEvent.connect(self.onFileEvent)
         sync.checkoutDone.connect(self.onCheckoutDone)
         self.doCheckout.connect(sync.checkout)
         QApplication.instance().lastWindowClosed.connect(self.ftpThread.quit)
@@ -199,7 +200,7 @@ class SyncWindow(QMainWindow):
         self.doCheckout.emit(False)
 
     @Slot(int, int)
-    def onDownloadProgress(self, total, progress):
+    def onProgress(self, action, total, progress):
         """
         Slot. Triggers download progress update in the UI.
         
@@ -211,10 +212,32 @@ class SyncWindow(QMainWindow):
             return
         else:
             percent = (progress * 100) / total
-            self.statusBar().showMessage('%s %d%%' % (self.currentFile, percent))
+            self.statusBar().showMessage('%s %s %d%%' % (action, self.currentFile, percent))
+        
+    @Slot(int, int)
+    def onDownloadProgress(self, total, progress):
+        """
+        Slot. Triggers upload progress update in the UI.
+        
+        :param total: Total size of the download in bytes
+        :param progress: Current downdload progress in bytes
+        """
+        
+        self.onProgress('Downloading', total, progress)
+        
+    @Slot(int, int)
+    def onUploadProgress(self, total, progress):
+        """
+        Slot. Triggers download progress update in the UI.
+        
+        :param total: Total size of the download in bytes
+        :param progress: Current downdload progress in bytes
+        """
+        
+        self.onProgress('Uploading', total, progress)
         
     @Slot(str)
-    def onDownloadingFile(self, filename):
+    def onFileEvent(self, filename):
         """
         Slot. Updates the current download filename to be used in the UI
         

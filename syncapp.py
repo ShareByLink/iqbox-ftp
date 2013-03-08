@@ -14,7 +14,8 @@ dt = datetime.datetime
 class FtpObject(QObject):
     
     downloadProgress = Signal((int, int,))
-    downloadingFile = Signal((str,))
+    uploadProgress = Signal((int, int,))
+    fileEvent = Signal((str,))
     checkoutDone = Signal()
     checkedFile = Signal((str, dt,))
     fileDeleted = Signal((str,str,))
@@ -92,7 +93,7 @@ class FtpObject(QObject):
                 # download it only if it hasn't been already downloaded
                 serverpath = os.path.join(downloading_dir, file_)
                 
-                with File.getFile(serverpath) as server_file:
+                with File.fromPath(serverpath) as server_file:
                     if server_file.last_checked_server != check_date:
                         # Do this process only once per file
                         if download is True:
@@ -177,7 +178,7 @@ class FtpObject(QObject):
         
         :param path: Relative or absolute path on the server
         """
-
+        
         dirs = list()
         def handleLine(line):
             """
@@ -254,7 +255,7 @@ class FtpObject(QObject):
             # Opens the file at `localname` which will hold the downloaded file.
             # Object attributes regarding download status are updated accordingly.
             print 'Downloading: %s' % filename
-            self.downloadingFile.emit(filename)
+            self.fileEvent.emit(filename)
             self.downloading = f
             self.download_size = int(self.ftp.sendcmd('SIZE %s' % filename).split(' ')[-1])
             self.download_progress = 0
@@ -277,6 +278,12 @@ class FtpObject(QObject):
         :param filename: Absolute or relative path to the file
         """
         
+        def handle(buf):
+            """This function is meant to be used as callback for the `storbinary` method."""
+        
+            self.upload_progress += 1024
+            self.uploadProgress.emit(self.upload_size, self.upload_progress)
+        
         # Removes leading separator
         file_ = filename[1:] if filename.startswith('/') else filename
         localpath = os.path.join(self.localdir, file_)
@@ -287,9 +294,15 @@ class FtpObject(QObject):
         try:
             # Uploads file and updates its modified date in the server
             # to match the date in the local filesystem.
-            modified = File.getFile(filename).localmdate
-            'MDTM %s %s' % (dt.utcnow().strftime('%Y%m%d%H%M%S'), '/Public/Files/Qt/time.txt')
-            self.ftp.storbinary('STOR %s' % filename, open(localpath, 'rb'))
+            modified = File.fromPath(filename).localmdate
+            self.upload_progress = 0
+            self.upload_size = os.path.getsize(localpath)
+            self.fileEvent.emit(localpath)
+            self.ftp.storbinary('STOR %s' % filename,
+                                open(localpath, 'rb'), 
+                                1024,
+                                handle)
+            
             self.ftp.sendcmd('MDTM %s %s' % (modified.strftime('%Y%m%d%H%M%S'), filename))
             return True
         except error_reply:
@@ -319,19 +332,18 @@ class FtpObject(QObject):
         
         :param path: Absolute path on the server to be created
         """
+        
         try:
             self.ftp.cwd(path)
         except error_perm:
             # `cwd` call failed. Need to create some folders
-            steps = path.split('/')
             make_dir = '/' 
-            print steps
+            steps = path.split('/')
             for step in steps:
                 if len(step) == 0:
                     continue
                 make_dir += '%s/' % step
                 try:
-                    print make_dir
                     self.ftp.mkd(make_dir)
                 except error_perm:
                     # Probably already exists
@@ -353,7 +365,7 @@ class FtpObject(QObject):
         
     @Slot(str, str)
     def deleted(self, location, serverpath):
-        with File.getFile(serverpath) as deleted:
+        with File.fromPath(serverpath) as deleted:
             deleted.inserver = False
             print 'Deleted Server:', serverpath
         

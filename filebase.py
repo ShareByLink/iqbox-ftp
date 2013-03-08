@@ -116,7 +116,7 @@ class File(Base):
         self.session.commit()
         
     @classmethod
-    def getFile(cls, path):
+    def fromPath(cls, path):
         """
         Returns a `File` instance by fetching it from the database
         using the `path` parameter, if such entry doesn't exist, this
@@ -144,18 +144,18 @@ Base.metadata.create_all(engine)
 
 if __name__ == '__main__':
     session = Session()
-    localfile = File.getFile('Public/Something')
+    localfile = File.fromPath('Public/Something')
     print localfile.inserver
     localfile.inserver = True
     
-    myfile = File.getFile('Public/New')
+    myfile = File.fromPath('Public/New')
     print myfile.last_checked_local, myfile.last_checked_server, myfile.inlocal, myfile.inserver
     
-    serverfile = File.getFile('Public/Something/Else')
+    serverfile = File.fromPath('Public/Something/Else')
     print serverfile.inlocal
     serverfile.inlocal = True
     
-    otherfile = File.getFile('Public/Other/File')
+    otherfile = File.fromPath('Public/Other/File')
     print otherfile
     otherfile.inlocal = True
     otherfile.inserver = True

@@ -34,7 +34,7 @@ class SyncCore(QObject):
             elif do == FileAction.DOWNLOAD:
                 self.downloadFile.emit(path)
             elif do == FileAction.DELETE:
-                with File.getFile(path) as deleted_file:
+                with File.fromPath(path) as deleted_file:
                     # `action.location` attribute only makes sense when deciding
                     # whether to delete a file on the server or local.
                     if location == FileAction.LOCAL:
@@ -62,7 +62,7 @@ class SyncCore(QObject):
         
     @Slot(str, str)
     def onChanged(self, location, serverpath):
-        changed_file = File.getFile(serverpath)
+        changed_file = File.fromPath(serverpath)
         action = None
         
         try:
@@ -93,7 +93,7 @@ class SyncCore(QObject):
     
     @Slot(str, str)
     def onAdded(self, location, serverpath):
-        added_file = File.getFile(serverpath)
+        added_file = File.fromPath(serverpath)
         action = None
         
         if location == FileAction.SERVER and not added_file.inlocal:
@@ -106,7 +106,7 @@ class SyncCore(QObject):
         
     @Slot(str, str)
     def onDeleted(self, location, serverpath):
-        deleted_file = File.getFile(serverpath)
+        deleted_file = File.fromPath(serverpath)
         action = None
         
         if location == FileAction.SERVER:
