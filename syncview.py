@@ -1,4 +1,3 @@
-import os
 import sys
 import platform
 import traceback
@@ -8,12 +7,11 @@ from PySide.QtGui import QWidget, QMainWindow, QApplication, QCheckBox
 from PySide.QtGui import QPushButton, QLabel, QLineEdit, QFont, QFileDialog, QMessageBox
 from PySide.QtGui import QHBoxLayout, QVBoxLayout, QPixmap, QFrame, QIcon, QSystemTrayIcon
 
-import resources
-
 import crypt
+import resources
 from syncapp import FtpObject
-from filewatcher import FileWatcher
 from synccore import SyncCore
+from filewatcher import FileWatcher
 
 
 resources.qInitResources()
@@ -119,7 +117,7 @@ class SyncWindow(QMainWindow):
         sync.downloadProgress.connect(self.onDownloadProgress)
         sync.uploadProgress.connect(self.onUploadProgress)
         sync.fileEvent.connect(self.onFileEvent)
-        sync.checkoutDone.connect(self.onCheckoutDone)
+        sync.fileEventComplete.connect(self.clearMessage)
         self.doCheckout.connect(sync.checkout)
         QApplication.instance().lastWindowClosed.connect(self.ftpThread.quit)
         
@@ -196,7 +194,7 @@ class SyncWindow(QMainWindow):
         self.core.moveToThread(self.ftpThread)
         self.watcher.moveToThread(self.ftpThread)
         
-        self.watcher.checkout(False)
+        self.watcher.checkout(True)
         self.doCheckout.emit(False)
 
     @Slot(int, int)
@@ -245,18 +243,7 @@ class SyncWindow(QMainWindow):
         """
         
         self.currentFile = filename
-    
-    @Slot()
-    def onCheckoutDone(self):
-        """
-        Slot. Will be called when the application finished syncing 
-        with the FTP server.
-        """
-        
-        get_settings().setValue(SettingsKeys['synced'], True)
-        self.statusBar().showMessage('Sync completed')
-        QTimer.singleShot(5000, self.clearMessage)
-        
+          
     @Slot()
     def clearMessage(self):
         self.statusBar().showMessage('')
@@ -559,6 +546,7 @@ class SyncView(View):
     
         localdir = self.localdirEdit.text()
         if len(localdir) > 0:
+            self.syncButton.setEnabled(False)
             self.sync.emit(localdir)
 
 

@@ -3,7 +3,7 @@ import sys
 import traceback
 
 from filebase import File, FileAction, ActionQueue, Session
-from PySide.QtCore import QObject, Slot, Signal, QTimer
+from PySide.QtCore import QObject, Slot, Signal, QTimer, QDir
 
 
 class SyncCore(QObject):
@@ -39,9 +39,14 @@ class SyncCore(QObject):
                     # whether to delete a file on the server or local.
                     if location == FileAction.LOCAL:
                         localpath = path[1:] if path.startswith('/') else path
+                        localpath = QDir.toNativeSeparators(localpath)
                         localpath = os.path.join(self.localdir, localpath)
                         
-                        os.remove(localpath)
+                        try:
+                            os.remove(localpath)
+                        except:
+                            pass
+                        
                         deleted_file.inlocal = False
                     elif location == FileAction.SERVER:
                         self.deleteServerFile.emit(path)

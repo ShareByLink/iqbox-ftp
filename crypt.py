@@ -8,6 +8,7 @@ sys.path.append(os.path.abspath(__file__))
 # Key should be in `key` file
 with open('key', 'r') as keyfile:
     KEY = keyfile.read()
+    
 
 def encrypt(data):
     """

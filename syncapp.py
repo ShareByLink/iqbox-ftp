@@ -4,18 +4,18 @@ import datetime
 import traceback
 from ftplib import FTP_TLS, FTP, error_reply, error_perm
 
-from PySide.QtCore import QObject, Signal, Slot, QTimer
+from PySide.QtCore import QObject, Signal, Slot, QTimer, QDir
 from filebase import File, Session
 
 
 dt = datetime.datetime
  
-
 class FtpObject(QObject):
     
     downloadProgress = Signal((int, int,))
     uploadProgress = Signal((int, int,))
     fileEvent = Signal((str,))
+    fileEventComplete = Signal()
     checkoutDone = Signal()
     checkedFile = Signal((str, dt,))
     fileDeleted = Signal((str,str,))
@@ -92,7 +92,6 @@ class FtpObject(QObject):
                 # `serverpath` is the absolute path of the file on the server,
                 # download it only if it hasn't been already downloaded
                 serverpath = os.path.join(downloading_dir, file_)
-                
                 with File.fromPath(serverpath) as server_file:
                     if server_file.last_checked_server != check_date:
                         # Do this process only once per file
@@ -243,8 +242,9 @@ class FtpObject(QObject):
         if localpath is None:
             # Gets the absolute local file path corresponding to the file `filename`
             # removing '/' at the beginnig of `filename` so the `os.path.join` call works
-            file_ = filename[1:] if filename.startswith('/') else filename
-            localpath = os.path.join(self.localdir, file_)
+            localpath = filename[1:] if filename.startswith('/') else filename
+            localpath = QDir.toNativeSeparators(localpath)
+            localpath = os.path.join(self.localdir, localpath)
         
         localdir = os.path.dirname(localpath)
         if not os.path.exists(localdir):
@@ -254,7 +254,7 @@ class FtpObject(QObject):
         with open(localpath, 'wb') as f:
             # Opens the file at `localname` which will hold the downloaded file.
             # Object attributes regarding download status are updated accordingly.
-            print 'Downloading: %s' % filename
+            print 'Downloading: %s to %s' % (filename, localpath)
             self.fileEvent.emit(filename)
             self.downloading = f
             self.download_size = int(self.ftp.sendcmd('SIZE %s' % filename).split(' ')[-1])
@@ -267,6 +267,8 @@ class FtpObject(QObject):
                 print 'Error downloading %s' % filename
                 downloaded = False
                 
+            self.fileEventComplete.emit()
+            
             return downloaded
             
     @Slot(str)
@@ -285,11 +287,14 @@ class FtpObject(QObject):
             self.uploadProgress.emit(self.upload_size, self.upload_progress)
         
         # Removes leading separator
-        file_ = filename[1:] if filename.startswith('/') else filename
-        localpath = os.path.join(self.localdir, file_)
+        localpath = filename[1:] if filename.startswith('/') else filename
+        localpath = QDir.toNativeSeparators(localpath)
+        localpath = os.path.join(self.localdir, localpath)
         
         # Creates the directory where the file will be uploaded to
         self.mkpath(os.path.dirname(filename))
+        
+        print 'Uploading %s to %s' % (localpath, filename)
         
         try:
             # Uploads file and updates its modified date in the server
@@ -304,10 +309,14 @@ class FtpObject(QObject):
                                 handle)
             
             self.ftp.sendcmd('MDTM %s %s' % (modified.strftime('%Y%m%d%H%M%S'), filename))
-            return True
+            uploaded = True
         except error_reply:
             print 'Error uploading %s' % filename
-            return False
+            uploaded = False
+            
+        self.fileEventComplete.emit()
+        
+        return uploaded
             
     def lastModified(self, filename):
         """

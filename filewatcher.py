@@ -2,14 +2,13 @@ import os
 import sys
 import datetime
 
-from PySide.QtCore import QObject, QCoreApplication, Slot, Signal, QTimer
+from PySide.QtCore import QObject, QCoreApplication, Slot, Signal, QTimer, QDir
 
 import syncapp
 from filebase import File, Session
 
 
 dt = datetime.datetime
-
 
 class FileWatcher(QObject):
     
@@ -26,6 +25,7 @@ class FileWatcher(QObject):
     
     def checkout(self, trigger_events=True):
         check_date = dt.utcnow()
+        
         for item in os.walk(self.localdir):
             directory = item[0]
             subfiles = item[-1]
@@ -33,6 +33,7 @@ class FileWatcher(QObject):
             for file_ in subfiles:
                 localpath = os.path.join(directory, file_)
                 serverpath = localpath.replace(self.localdir, '')
+                serverpath = QDir.fromNativeSeparators(serverpath)
                 localmdate = dt.utcfromtimestamp(os.path.getmtime(localpath))
                 
                 with File.fromPath(serverpath) as local_file:
