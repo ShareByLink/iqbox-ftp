@@ -1,14 +1,12 @@
 import os
 import sys
-import datetime
 import traceback
+from datetime import datetime as dt
 from ftplib import FTP_TLS, FTP, error_reply, error_perm
 
 from PySide.QtCore import QObject, Signal, Slot, QTimer, QDir
 from filebase import File, Session
 
-
-dt = datetime.datetime
  
 class FtpObject(QObject):
     
@@ -262,6 +260,19 @@ class FtpObject(QObject):
 
             try:
                 self.ftp.retrbinary('RETR %s' % filename, handleChunk)
+                
+                # Let's set the same modified time in local: first find out the local difference
+                # to utc, so `mdate` is the modified time in the server but on local time,
+                # `int(mdate.total_seconds())`  to loose the milliseconds, the downloaded file
+                # won't be uploaded because its local modified time will be older 
+                # or equal to that on the server. 
+                with File.fromPath(filename) as downloadedfile:
+                    utcdiff = dt.now() - dt.utcnow() 
+                    unixmdate = (downloadedfile.servermdate - dt(1970, 1, 1, 0, 0, 0)) + utcdiff
+                    unixmdatestamp = int(unixmdate.total_seconds()) - 5
+                    os.utime(localpath, (unixmdatestamp, unixmdatestamp))
+                    downloadedfile.localmdate = downloadedfile.servermdate
+                    
                 downloaded = True
             except error_reply:
                 print 'Error downloading %s' % filename
@@ -299,7 +310,6 @@ class FtpObject(QObject):
         try:
             # Uploads file and updates its modified date in the server
             # to match the date in the local filesystem.
-            modified = File.fromPath(filename).localmdate
             self.upload_progress = 0
             self.upload_size = os.path.getsize(localpath)
             self.fileEvent.emit(localpath)
@@ -308,7 +318,11 @@ class FtpObject(QObject):
                                 1024,
                                 handle)
             
-            self.ftp.sendcmd('MDTM %s %s' % (modified.strftime('%Y%m%d%H%M%S'), filename))
+            with File.fromPath(filename) as uploaded:
+                modified = uploaded.localmdate
+                uploaded.servermdate = modified
+                self.ftp.sendcmd('MDTM %s %s' % (modified.strftime('%Y%m%d%H%M%S'), filename))
+            
             uploaded = True
         except error_reply:
             print 'Error uploading %s' % filename

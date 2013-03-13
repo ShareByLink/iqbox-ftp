@@ -1,14 +1,12 @@
 import os
 import sys
-import datetime
+from datetime import datetime as dt
 
 from PySide.QtCore import QObject, QCoreApplication, Slot, Signal, QTimer, QDir
 
 import syncapp
 from filebase import File, Session
 
-
-dt = datetime.datetime
 
 class FileWatcher(QObject):
     
