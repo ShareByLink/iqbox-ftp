@@ -1,5 +1,3 @@
-from datetime import datetime as dt
-
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.exc import MultipleResultsFound, NoResultFound
 from sqlalchemy.ext.declarative import declarative_base
@@ -32,6 +30,9 @@ class ActionQueue(object):
     def remove(self, action):
         self.session.delete(action)
         self.session.commit()
+        
+    def clear(self):
+        self.session.query(FileAction).delete()
     
     def add(self, action):
         # Looking for previous actions over the same path
@@ -143,6 +144,28 @@ Base.metadata.create_all(engine)
 
 if __name__ == '__main__':
     session = Session()
+    
+    action_queue = ActionQueue()
+    action = FileAction('/some/path', FileAction.UPLOAD, FileAction.SERVER)
+    
+    action_queue.add(action)
+    print action_queue
+    print action_queue[0]
+    print action_queue.next()
+    
+    
+    for action_ in action_queue:
+        print action_
+        
+    action_queue.clear()
+    print 'Actions', len(action_queue)
+    for action_ in action_queue:
+        print 'Deleted', action_ 
+        
+    session.commit()
+    
+    raise SystemExit()
+    
     localfile = File.fromPath('Public/Something')
     print localfile.inserver
     localfile.inserver = True
@@ -166,17 +189,5 @@ if __name__ == '__main__':
 
     print dir(session.query())
 
-    action_queue = ActionQueue()
-    action = FileAction('/some/path', FileAction.UPLOAD, FileAction.SERVER)
-    
-    action_queue.add(action)
-    print action_queue
-    print action_queue[0]
-    print action_queue.next()
-    
-    
-    for action_ in action_queue:
-        print action_
-        
-    session.commit()
+
     

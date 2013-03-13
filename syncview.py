@@ -502,10 +502,10 @@ class SyncView(View):
         
         self.localdirLabel = QLabel(self)
         self.localdirEdit = QLineEdit(self)
-        self.localdirLabel.setText('Choose a directory')
+        self.localdirLabel.setText('Choose a folder')
         self.localdirLabel.setFont(labelsFont)
         self.localdirEdit.setFixedWidth(fieldsWidth)
-        self.localdirEdit.setReadOnly(True)
+        self.localdirEdit.setReadOnly(False)
         self.localdirEdit.setFont(editsFont)
         
         self.browseButton = QPushButton(self)

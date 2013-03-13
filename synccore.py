@@ -17,6 +17,8 @@ class SyncCore(QObject):
         
         self.localdir = localdir
         self.action_queue = ActionQueue()
+        self.action_queue.clear()
+        
         QTimer.singleShot(0, self.takeAction)
     
     @Slot()

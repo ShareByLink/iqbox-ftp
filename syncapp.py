@@ -2,6 +2,7 @@ import os
 import sys
 import traceback
 from datetime import datetime as dt
+from datetime import timedelta
 from ftplib import FTP_TLS, FTP, error_reply, error_perm
 
 from PySide.QtCore import QObject, Signal, Slot, QTimer, QDir
@@ -420,13 +421,13 @@ if __name__ == '__main__':
     print app2.ftp.login('sergio', 'lopikljh')
     
     time = app2.lastModified('/Public/Files/Qt/time.txt')
-    print 'Book UTC: %s, Local: %s' % (time, time - datetime.timedelta(hours=5))
+    print 'Book UTC: %s, Local: %s' % (time, time - timedelta(hours=5))
     
     cmd = 'MDTM %s %s' % (dt.utcnow().strftime('%Y%m%d%H%M%S'), '/Public/Files/Qt/time.txt')
     print cmd
     app2.ftp.sendcmd(cmd)
     time = app2.lastModified('/Public/Files/Qt/time.txt')
-    print 'UTC: %s, Local: %s' % (time, time - datetime.timedelta(hours=5))
+    print 'UTC: %s, Local: %s' % (time, time - timedelta(hours=5))
     
     print 'Dirs in "/": %s' % app2.getDirs('/')
     print 'Files in "/": %s' % app2.getFiles('/')
@@ -439,12 +440,12 @@ if __name__ == '__main__':
     print 'Dirs in "/": %s' % app1.getDirs('/')
     print 'Files in "/": %s' % app1.getFiles('/')
     
-    print 'IQ UTC: %s, Local: %s' % (time, time - datetime.timedelta(hours=5))
+    print 'IQ UTC: %s, Local: %s' % (time, time - timedelta(hours=5))
     
     cmd = 'MDTM %s %s' % (dt.utcnow().strftime('%Y%m%d%H%M%S'), '/4.89 MB Download.bin')
     print cmd
     app1.ftp.sendcmd(cmd)
     time = app1.lastModified('/4.89 MB Download.bin')
-    print 'UTC: %s, Local: %s' % (time, time - datetime.timedelta(hours=5))
+    print 'UTC: %s, Local: %s' % (time, time - timedelta(hours=5))
     
     
