@@ -1,5 +1,8 @@
+*~
 *.pyc
 dist/
 build/
 *.db
 key
+*.project
+*.pydevproject
