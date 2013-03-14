@@ -2,24 +2,25 @@ import os
 import sys
 import traceback
 from datetime import datetime as dt
-from datetime import timedelta
+from datetime import timedelta as td
 from ftplib import FTP_TLS, FTP, error_reply, error_perm
 
-from PySide.QtCore import QObject, Signal, Slot, QTimer, QDir
+from PySide.QtCore import QObject, Signal, Slot, QTimer, QDir, QThread
+
 from filebase import File, Session
 
- 
+
 class FtpObject(QObject):
     
     downloadProgress = Signal((int, int,))
     uploadProgress = Signal((int, int,))
     fileEvent = Signal((str,))
     fileEventComplete = Signal()
-    checkoutDone = Signal()
     checkedFile = Signal((str, dt,))
     fileDeleted = Signal((str,str,))
     fileAdded = Signal((str,str,))
     fileChanged = Signal((str,str,))
+    checked = Signal()
     
     LOCATION = 'server'
     
@@ -36,6 +37,9 @@ class FtpObject(QObject):
         super(FtpObject, self).__init__(parent)
         
         self.localdir = ''
+        self.deleteQueue = []
+        self.downloadQueue = []
+        self.uploadQueue = []
         self.ftp = FTP_TLS(host) if ssl is True else FTP(host)
 
     @property
@@ -53,18 +57,29 @@ class FtpObject(QObject):
         """
         
         self.localdir = localdir
+        self.uploading = False
         
         if not os.path.exists(self.localdir):
             os.makedirs(self.localdir)
     
-    @Slot(bool)
-    def checkout(self, download=False):
+    @Slot()
+    def startCheckout(self):
+        self.checkTimer = QTimer()
+        self.checkTimer.setInterval(5000)
+        self.checkTimer.timeout.connect(self.checkout)
+        
+        self.checkTimer.start()
+    
+    @Slot()
+    def checkout(self):
         """
         Recursively checks out all files on the server.
         Returns a dictionary of files on the server with their last modified date.
         
         :param download: Indicates whether or not the files should be downloaded
         """
+    
+        self.checkTimer.stop()
         
         # Handy list to keep track of the checkout process.
         # This lists contain absolute paths only.
@@ -74,7 +89,7 @@ class FtpObject(QObject):
         self.ftp.cwd('/')
         downloading_dir = self.currentdir
         check_date = dt.utcnow()
-            
+        print 'Checking out server %s' % check_date
         while True:
             # Gets the list of sub directories and files inside the 
             # current directory `downloading_dir`.
@@ -91,27 +106,26 @@ class FtpObject(QObject):
                 # `serverpath` is the absolute path of the file on the server,
                 # download it only if it hasn't been already downloaded
                 serverpath = os.path.join(downloading_dir, file_)
-                with File.fromPath(serverpath) as server_file:
-                    if server_file.last_checked_server != check_date:
-                        # Do this process only once per file
-                        if download is True:
-                            self.downloadFile(serverpath)
-                            
-                        just_added = not server_file.inserver
-                        lastmdate = server_file.servermdate
-                        
-                        server_file.inserver = True
-                        server_file.last_checked_server = check_date
-                        server_file.servermdate = self.lastModified(serverpath)
-                        
-                        server_file.session.commit()
-                        # Emit the signals after the attributes has been set and committed
-                        if just_added is True:
-                            self.fileAdded.emit(FtpObject.LOCATION, serverpath)
-                        elif server_file.servermdate > lastmdate:
-                            self.fileChanged.emit(FtpObject.LOCATION, serverpath)
-    
-                        self.checkedFile.emit(server_file.path, server_file.servermdate)
+                serverpath = QDir.fromNativeSeparators(serverpath)
+                server_file = File.fromPath(serverpath)
+                if server_file.last_checked_server != check_date:
+                    # Do this process only once per file        
+                    just_added = not server_file.inserver
+                    lastmdate = server_file.servermdate
+                    servermdate = self.lastModified(serverpath)
+                    
+                    server_file.inserver = True
+                    server_file.last_checked_server = check_date
+                    server_file.servermdate = servermdate
+                    server_file.session.commit()
+                    
+                    # Emit the signals after the attributes has been set and committed
+                    if just_added is True:
+                        self.fileAdded.emit(FtpObject.LOCATION, serverpath)
+                    elif server_file.servermdate > lastmdate:
+                        self.fileChanged.emit(FtpObject.LOCATION, serverpath)
+
+                    self.checkedFile.emit(serverpath, servermdate)
             
             dir_ready = True
             for dir_ in dir_subdirs:
@@ -145,9 +159,20 @@ class FtpObject(QObject):
         for file_ in deleted:
             self.fileDeleted.emit(FtpObject.LOCATION, file_.path)
         
+        print 'Checking out done %s' % check_date
+        # Check  `self.deleteQueue`, `self.uploadQueue` and `self.downloadQueue` queues.
+        # These tasks are done in queues to make sure all FTP commands
+        # are done sequentially, in the same thread.
+        self.deleteAll()
+        self.uploadAll()
+        self.downloadAll()
+        
+        # Wraps up the checkout process, commits to the database and
+        # restarts the timer.`self.checked` is emitted when
+        # there are no pending FTP commands
+        self.checkTimer.start()
+        self.checked.emit()
         session.commit()
-        QTimer.singleShot(5000, self.checkout)
-        self.checkoutDone.emit()
                 
     def getFiles(self, path):
         """
@@ -199,6 +224,21 @@ class FtpObject(QObject):
         return dirs
     
     @Slot(str)
+    def onDelete(self, filename):
+        self.deleteQueue.append(filename)
+        
+    def deleteNext(self):
+        if len(self.deleteQueue) > 0:
+            next = self.deleteQueue.pop(0)
+            self.deleteFile(next)
+    
+    def deleteAll(self):
+        for filename in self.deleteQueue:
+            self.deleteFile(filename)
+            
+        self.deleteQueue = []
+    
+    @Slot(str)
     def deleteFile(self, filename):
         """
         Deletes the file `filename` to the server
@@ -209,10 +249,25 @@ class FtpObject(QObject):
         try:
             self.ftp.delete(filename)
             return True
-        except error_reply:
+        except (error_reply, error_perm):
             print 'Error deleting %s' % filename
             return False
-         
+        
+    @Slot(str)
+    def onDownload(self, filename):
+        self.downloadQueue.append(filename)
+        
+    def downloadNext(self):
+        if len(self.downloadQueue) > 0:
+            next = self.downloadQueue.pop(0)
+            self.downloadFile(next)
+            
+    def downloadAll(self):
+        for filename in self.downloadQueue:
+            self.downloadFile(filename)
+            
+        self.downloadQueue = []
+    
     @Slot(str, str)   
     def downloadFile(self, filename, localpath=None):
         """
@@ -268,20 +323,34 @@ class FtpObject(QObject):
                 # won't be uploaded because its local modified time will be older 
                 # or equal to that on the server. 
                 with File.fromPath(filename) as downloadedfile:
-                    utcdiff = dt.now() - dt.utcnow() 
-                    unixmdate = (downloadedfile.servermdate - dt(1970, 1, 1, 0, 0, 0)) + utcdiff
-                    unixmdatestamp = int(unixmdate.total_seconds()) - 5
-                    os.utime(localpath, (unixmdatestamp, unixmdatestamp))
-                    downloadedfile.localmdate = downloadedfile.servermdate
-                    
+                    utcnowplus = dt.utcnow() + td(seconds=10)
+                    downloadedfile.localmdate = dt.utcnow()
+                    downloadedfile.servermdate = utcnowplus
+                    self.ftp.sendcmd('MDTM %s %s' % (utcnowplus.strftime('%Y%m%d%H%M%S'), filename))
+    
                 downloaded = True
-            except error_reply:
+            except (error_reply, error_perm):
                 print 'Error downloading %s' % filename
                 downloaded = False
                 
             self.fileEventComplete.emit()
             
             return downloaded
+    
+    @Slot(str)
+    def onUpload(self, filename):
+        self.uploadQueue.append(filename)
+    
+    def uploadNext(self):
+        if len(self.uploadQueue) > 0:
+            next = self.uploadQueue.pop(0)
+            self.uploadFile(next)
+            
+    def uploadAll(self):
+        for filename in self.uploadQueue:
+            self.uploadFile(filename)
+            
+        self.uploadQueue = []
             
     @Slot(str)
     def uploadFile(self, filename):
@@ -314,10 +383,12 @@ class FtpObject(QObject):
             self.upload_progress = 0
             self.upload_size = os.path.getsize(localpath)
             self.fileEvent.emit(localpath)
+            self.uploading = True
             self.ftp.storbinary('STOR %s' % filename,
                                 open(localpath, 'rb'), 
                                 1024,
                                 handle)
+            self.uploading = False
             
             with File.fromPath(filename) as uploaded:
                 modified = uploaded.localmdate
@@ -325,7 +396,7 @@ class FtpObject(QObject):
                 self.ftp.sendcmd('MDTM %s %s' % (modified.strftime('%Y%m%d%H%M%S'), filename))
             
             uploaded = True
-        except error_reply:
+        except (error_reply, error_perm):
             print 'Error uploading %s' % filename
             uploaded = False
             
@@ -409,7 +480,7 @@ if __name__ == '__main__':
     print 'Dirs in "/": %s' % app3.getDirs('/')
     print 'Files in "/": %s' % app3.getFiles('/')
     
-    app3.checkout(False)
+    app3.checkout()
     
     app3.mkpath('/folder/other/one/two/three/')
     app3.mkpath('/folder/other/one/two/three/four')

@@ -33,6 +33,7 @@ class ActionQueue(object):
         
     def clear(self):
         self.session.query(FileAction).delete()
+        self.session.commit()
     
     def add(self, action):
         # Looking for previous actions over the same path

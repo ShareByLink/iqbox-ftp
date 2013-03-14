@@ -52,7 +52,6 @@ class SyncWindow(QMainWindow):
     """
     
     failedLogIn = Signal()
-    doCheckout = Signal((bool,))
     
     def __init__(self, parent=None):
         super(SyncWindow, self).__init__(parent)
@@ -108,7 +107,6 @@ class SyncWindow(QMainWindow):
         :param ssl: Indicates whether the FTP needs SSL support
         """
         
-        self.ftpThread = QThread()
         sync = FtpObject(host, ssl)
         
         sync.fileAdded.connect(sync.added)
@@ -118,11 +116,6 @@ class SyncWindow(QMainWindow):
         sync.uploadProgress.connect(self.onUploadProgress)
         sync.fileEvent.connect(self.onFileEvent)
         sync.fileEventComplete.connect(self.clearMessage)
-        self.doCheckout.connect(sync.checkout)
-        QApplication.instance().lastWindowClosed.connect(self.ftpThread.quit)
-        
-        sync.moveToThread(self.ftpThread)
-        self.ftpThread.start()
         
         return sync
    
@@ -176,27 +169,39 @@ class SyncWindow(QMainWindow):
         self.watcher = FileWatcher(localdir)
         self.core = SyncCore(localdir)
         
+        self.ftpThread = QThread()
+        QApplication.instance().lastWindowClosed.connect(self.ftpThread.quit)
+        
+        self.core.moveToThread(self.ftpThread)
+        self.watcher.moveToThread(self.ftpThread)
+        self.sync.moveToThread(self.ftpThread)
+        
+        self.ftpThread.started.connect(self.core.initQueue)
+        self.ftpThread.started.connect(self.watcher.startCheckout)
+        self.ftpThread.started.connect(self.sync.startCheckout)
+        
         self.watcher.fileAdded.connect(self.watcher.added)
         self.watcher.fileChanged.connect(self.watcher.changed)
         self.watcher.fileDeleted.connect(self.watcher.deleted)
-        
         self.watcher.fileAdded.connect(self.core.onAdded)
         self.watcher.fileChanged.connect(self.core.onChanged)
         self.watcher.fileDeleted.connect(self.core.onDeleted)
         self.sync.fileAdded.connect(self.core.onAdded)
         self.sync.fileChanged.connect(self.core.onChanged)
         self.sync.fileDeleted.connect(self.core.onDeleted)
+        self.sync.checked.connect(self.core.onFtpDone)
         
-        self.core.deleteServerFile.connect(self.sync.deleteFile)
-        self.core.downloadFile.connect(self.sync.downloadFile)
-        self.core.uploadFile.connect(self.sync.uploadFile)
+        self.core.deleteServerFile.connect(self.sync.onDelete)
+        self.core.downloadFile.connect(self.sync.onDownload)
+        self.core.uploadFile.connect(self.sync.onUpload)
         
-        self.core.moveToThread(self.ftpThread)
-        self.watcher.moveToThread(self.ftpThread)
-        
-        self.watcher.checkout(True)
-        self.doCheckout.emit(False)
+        self.ftpThread.start()
+            
+        #self.core.initQueue()
+        #self.watcher.()
+        #self.sync.startCheckout()
 
+        
     @Slot(int, int)
     def onProgress(self, action, total, progress):
         """

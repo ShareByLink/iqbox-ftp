@@ -2,8 +2,9 @@ import os
 import sys
 import traceback
 
+from PySide.QtCore import QObject, Slot, Signal, QTimer, QDir, QThread
+
 from filebase import File, FileAction, ActionQueue, Session
-from PySide.QtCore import QObject, Slot, Signal, QTimer, QDir
 
 
 class SyncCore(QObject):
@@ -16,10 +17,17 @@ class SyncCore(QObject):
         super(SyncCore, self).__init__(parent)
         
         self.localdir = localdir
+        
+    @Slot()
+    def initQueue(self):
         self.action_queue = ActionQueue()
         self.action_queue.clear()
         
-        QTimer.singleShot(0, self.takeAction)
+        self.actionTimer = QTimer()
+        self.actionTimer.setInterval(5000)
+        self.actionTimer.timeout.connect(self.takeAction)
+        
+        self.actionTimer.start()
     
     @Slot()
     def takeAction(self):
@@ -61,16 +69,23 @@ class SyncCore(QObject):
             session.query(File).filter(File.inserver == False).filter(File.inlocal == False).delete()
             session.commit()
             
-            wait_time = 5000            
-        else:
-            wait_time = 0
-            
-        QTimer.singleShot(wait_time, self.takeAction)
+    @Slot()
+    def onFtpDone(self):
+        """
+        Slot. Should be triggered when the FTP commads are all done,
+        this method checks if the sync is complete        
+        """
+        
+        #
+        pass
+        
         
     @Slot(str, str)
     def onChanged(self, location, serverpath):
         changed_file = File.fromPath(serverpath)
         action = None
+        
+        print 'Changed', changed_file.localmdate, changed_file.servermdate
         
         try:
             if location == FileAction.SERVER:

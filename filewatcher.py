@@ -19,11 +19,21 @@ class FileWatcher(QObject):
     
     def __init__(self, localdir, parent=None):
         super(FileWatcher, self).__init__(parent)
+        
         self.localdir = localdir
     
-    def checkout(self, trigger_events=True):
-        check_date = dt.utcnow()
+    @Slot()
+    def startCheckout(self):
+        self.checkTimer = QTimer()
+        self.checkTimer.setInterval(5000)
+        self.checkTimer.timeout.connect(self.checkout)
         
+        self.checkTimer.start()
+        
+    @Slot()
+    def checkout(self):
+        check_date = dt.utcnow()
+        print 'Checking out local %s' % check_date
         for item in os.walk(self.localdir):
             directory = item[0]
             subfiles = item[-1]
@@ -33,7 +43,7 @@ class FileWatcher(QObject):
                 serverpath = localpath.replace(self.localdir, '')
                 serverpath = QDir.fromNativeSeparators(serverpath)
                 localmdate = dt.utcfromtimestamp(os.path.getmtime(localpath))
-                
+
                 with File.fromPath(serverpath) as local_file:
                     just_added = not local_file.inlocal
                     lastmdate = local_file.localmdate
@@ -44,22 +54,19 @@ class FileWatcher(QObject):
                     
                 # Emit the signals after the attributes has been set
                 # and committed.
-                if trigger_events is True:
-                    if just_added is True:
-                        self.fileAdded.emit(FileWatcher.LOCATION, serverpath)
-                    elif localmdate > lastmdate:
-                        self.fileChanged.emit(FileWatcher.LOCATION, serverpath)
+                if just_added is True:
+                    self.fileAdded.emit(FileWatcher.LOCATION, serverpath)
+                elif localmdate > lastmdate:
+                    self.fileChanged.emit(FileWatcher.LOCATION, serverpath)
 
         # Deleted files are the ones whose `last_checked_local` attribute 
         # didn't get updated in the recursive run.
         session = Session()
         deleted = session.query(File).filter(File.last_checked_local < check_date).filter(File.inlocal == True)
         for file_ in deleted:
-            if trigger_events is True:
-                self.fileDeleted.emit(FileWatcher.LOCATION, file_.path)
+            self.fileDeleted.emit(FileWatcher.LOCATION, file_.path)
             
         session.commit()
-        QTimer.singleShot(5000, self.checkout)
 
     @Slot(str)
     def added(self, location, serverpath):
