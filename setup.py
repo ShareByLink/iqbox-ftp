@@ -14,4 +14,4 @@ setup(name = 'IQBox',
       version = '0.1',
       description = 'FTP Sync application',
       options = {'build_exe': {'include_files': includefiles, 'includes': includemodules}},
-      executables = [Executable("syncview.py", base=base)])
+      executables = [Executable("syncview.py", base=base, targetName='IQBox.exe')])
