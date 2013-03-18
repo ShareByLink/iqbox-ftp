@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import traceback
 from datetime import datetime as dt
 from datetime import timedelta as td
@@ -89,7 +90,7 @@ class FtpObject(QObject):
         self.ftp.cwd('/')
         downloading_dir = self.currentdir
         check_date = dt.utcnow()
-        print 'Checking out server %s' % check_date
+
         while True:
             # Gets the list of sub directories and files inside the 
             # current directory `downloading_dir`.
@@ -159,7 +160,6 @@ class FtpObject(QObject):
         for file_ in deleted:
             self.fileDeleted.emit(FtpObject.LOCATION, file_.path)
         
-        print 'Checking out done %s' % check_date
         # Check  `self.deleteQueue`, `self.uploadQueue` and `self.downloadQueue` queues.
         # These tasks are done in queues to make sure all FTP commands
         # are done sequentially, in the same thread.
@@ -311,22 +311,22 @@ class FtpObject(QObject):
             print 'Downloading: %s to %s' % (filename, localpath)
             self.fileEvent.emit(filename)
             self.downloading = f
-            self.download_size = int(self.ftp.sendcmd('SIZE %s' % filename).split(' ')[-1])
             self.download_progress = 0
 
             try:
+                self.download_size = int(self.ftp.sendcmd('SIZE %s' % filename).split(' ')[-1])
                 self.ftp.retrbinary('RETR %s' % filename, handleChunk)
                 
-                # Let's set the same modified time in local: first find out the local difference
-                # to utc, so `mdate` is the modified time in the server but on local time,
-                # `int(mdate.total_seconds())`  to loose the milliseconds, the downloaded file
-                # won't be uploaded because its local modified time will be older 
-                # or equal to that on the server. 
+                # Let's set the same modified time on the server to match
+                # the one in local.          
                 with File.fromPath(filename) as downloadedfile:
-                    utcnowplus = dt.utcnow() + td(seconds=10)
-                    downloadedfile.localmdate = dt.utcnow()
-                    downloadedfile.servermdate = utcnowplus
-                    self.ftp.sendcmd('MDTM %s %s' % (utcnowplus.strftime('%Y%m%d%H%M%S'), filename))
+                    mdate = dt.utcfromtimestamp(os.path.getmtime(localpath)) 
+                    
+                    downloadedfile.localmdate = mdate
+                    downloadedfile.servermdate = mdate
+                    
+                self.ftp.sendcmd('MDTM %s %s' % (mdate.strftime('%Y%m%d%H%M%S'), filename))
+
     
                 downloaded = True
             except (error_reply, error_perm):

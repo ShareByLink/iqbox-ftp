@@ -17,6 +17,8 @@ class SyncCore(QObject):
         super(SyncCore, self).__init__(parent)
         
         self.localdir = localdir
+        self.localAdds = []
+        self.serverAdds = []
         
     @Slot()
     def initQueue(self):
@@ -76,18 +78,35 @@ class SyncCore(QObject):
         this method checks if the sync is complete        
         """
         
-        #
-        pass
-        
+        # This method will be used as a sync fallback.
+        # In case `self.action_queue`, the database will be
+        # queries looking for unsynced files. 
+        if len(self.action_queue) == 0:
+            session = Session()
+            
+            for file_ in session.query(File).filter(File.inserver != File.inlocal):
+                # Unsynced: In one place but not the other.
+                if file_.inserver:
+                    location = FileAction.SERVER
+                else:
+                    location = FileAction.LOCAL
+                self.onAdded(FileAction.LOCAL, file_.path)
         
     @Slot(str, str)
     def onChanged(self, location, serverpath):
         changed_file = File.fromPath(serverpath)
         action = None
         
-        print 'Changed', changed_file.localmdate, changed_file.servermdate
+        print 'Changed here %s, there %s delta %s' % (
+                    changed_file.localmdate, changed_file.servermdate,
+                    (changed_file.localmdate - changed_file.servermdate).total_seconds())
         
         try:
+            diff = (changed_file.localmdate - changed_file.servermdate).total_seconds()
+            
+            if abs(diff) < 1:
+                return
+            
             if location == FileAction.SERVER:
                 if changed_file.inlocal:
                     if changed_file.localmdate < changed_file.servermdate:

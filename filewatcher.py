@@ -33,7 +33,7 @@ class FileWatcher(QObject):
     @Slot()
     def checkout(self):
         check_date = dt.utcnow()
-        print 'Checking out local %s' % check_date
+
         for item in os.walk(self.localdir):
             directory = item[0]
             subfiles = item[-1]
