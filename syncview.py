@@ -556,6 +556,8 @@ class SyncView(View):
 
 
 if __name__ == '__main__':
+    sys.stderr = sys.stdout = open('log.txt', 'a')
+    
     app = QApplication(sys.argv)
     window = SyncWindow()
     font = QFont(fontfamily, 12, 50, False)
