@@ -158,6 +158,8 @@ if __name__ == '__main__':
     for action_ in action_queue:
         print action_
         
+    print session.query(File).filter(File.inserver != File.inlocal).all()
+        
     action_queue.clear()
     print 'Actions', len(action_queue)
     for action_ in action_queue:
