@@ -58,8 +58,6 @@ class FtpObject(QObject):
         """
         
         self.localdir = localdir
-        self.uploading = False
-        
         if not os.path.exists(self.localdir):
             os.makedirs(self.localdir)
     
@@ -81,6 +79,13 @@ class FtpObject(QObject):
         """
     
         self.checkTimer.stop()
+        
+        # Check  `self.deleteQueue`, `self.uploadQueue` and `self.downloadQueue` queues.
+        # These tasks are done in queues to make sure all FTP commands
+        # are done sequentially, in the same thread.
+        self.deleteAll()
+        self.uploadAll()
+        self.downloadAll()
         
         # Handy list to keep track of the checkout process.
         # This lists contain absolute paths only.
@@ -159,13 +164,6 @@ class FtpObject(QObject):
         deleted = session.query(File).filter(File.last_checked_server < check_date).filter(File.inserver == True)
         for file_ in deleted:
             self.fileDeleted.emit(FtpObject.LOCATION, file_.path)
-        
-        # Check  `self.deleteQueue`, `self.uploadQueue` and `self.downloadQueue` queues.
-        # These tasks are done in queues to make sure all FTP commands
-        # are done sequentially, in the same thread.
-        self.deleteAll()
-        self.uploadAll()
-        self.downloadAll()
         
         # Wraps up the checkout process, commits to the database and
         # restarts the timer.`self.checked` is emitted when
@@ -256,6 +254,7 @@ class FtpObject(QObject):
         """
         
         try:
+            print 'Deleting %s' % filename
             self.ftp.delete(filename)
             return True
         except (error_reply, error_perm):
@@ -326,6 +325,8 @@ class FtpObject(QObject):
                 self.download_size = int(self.ftp.sendcmd('SIZE %s' % filename).split(' ')[-1])
                 self.ftp.retrbinary('RETR %s' % filename, handleChunk)
                 
+                print 'Download finished'
+                
                 # Let's set the same modified time on the server to match
                 # the one in local.          
                 with File.fromPath(filename) as downloadedfile:
@@ -336,10 +337,9 @@ class FtpObject(QObject):
                     
                 self.ftp.sendcmd('MDTM %s %s' % (mdate.strftime('%Y%m%d%H%M%S'), filename))
 
-    
                 downloaded = True
-            except (error_reply, error_perm):
-                print 'Error downloading %s' % filename
+            except (error_reply, error_perm) as ftperr:
+                print 'Error downloading %s, %s' % (filename, ftperr)
                 downloaded = False
                 
             self.fileEventComplete.emit()
@@ -392,21 +392,19 @@ class FtpObject(QObject):
             self.upload_progress = 0
             self.upload_size = os.path.getsize(localpath)
             self.fileEvent.emit(localpath)
-            self.uploading = True
             self.ftp.storbinary('STOR %s' % filename,
                                 open(localpath, 'rb'), 
                                 1024,
                                 handle)
-            self.uploading = False
-            
+            print 'Upload finished'
             with File.fromPath(filename) as uploaded:
                 modified = uploaded.localmdate
                 uploaded.servermdate = modified
                 self.ftp.sendcmd('MDTM %s %s' % (modified.strftime('%Y%m%d%H%M%S'), filename))
             
             uploaded = True
-        except (error_reply, error_perm):
-            print 'Error uploading %s' % filename
+        except (error_reply, error_perm) as ftperr:
+            print 'Error uploading %s, %s' % (filename, ftperr)
             uploaded = False
             
         self.fileEventComplete.emit()
