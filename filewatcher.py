@@ -47,7 +47,7 @@ class FileWatcher(QObject):
                 with File.fromPath(serverpath) as local_file:
                     just_added = not local_file.inlocal
                     lastmdate = local_file.localmdate
-                    
+                         
                     local_file.inlocal = True
                     local_file.last_checked_local = check_date
                     local_file.localmdate = localmdate

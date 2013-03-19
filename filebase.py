@@ -37,6 +37,7 @@ class ActionQueue(object):
     
     def add(self, action):
         # Looking for previous actions over the same path
+        print 'Adding action: %s' % action
         prev_action = self.session.query(FileAction).filter_by(path=action.path).first()
         if prev_action is not None:
             # If there is an action over the same path, update it

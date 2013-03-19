@@ -36,7 +36,7 @@ class SyncCore(QObject):
         action = self.action_queue.next()
         
         if action is not None:
-            print 'Action: %s' % action 
+            print 'Next action: %s' % action 
             path = action.path
             do = action.action
             location = action.location
@@ -104,7 +104,7 @@ class SyncCore(QObject):
         try:
             diff = (changed_file.localmdate - changed_file.servermdate).total_seconds()
             
-            if abs(diff) < 1:
+            if abs(diff) < 5:
                 return
             
             if location == FileAction.SERVER:
