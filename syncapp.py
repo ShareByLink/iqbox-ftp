@@ -191,8 +191,10 @@ class FtpObject(QObject):
             
             return files
         except:
+            print 'Exception in FtpObject.getDirs'
             info = traceback.format_exception(*sys.exc_info())
             for i in info: sys.stderr.write(i)
+            return []
              
     def getDirs(self, path):
         """
@@ -220,8 +222,15 @@ class FtpObject(QObject):
                     # Ignoring '.' and '..' entries
                     dirs.append(dirname)
         
-        self.ftp.retrlines('LIST %s' % path, handleLine)
-        return dirs
+        try:
+            self.ftp.retrlines('LIST %s' % path, handleLine)
+            
+            return dirs
+        except:
+            print 'Exception in FtpObject.getDirs'
+            info = traceback.format_exception(*sys.exc_info())
+            for i in info: sys.stderr.write(i)
+            return []
     
     @Slot(str)
     def onDelete(self, filename):
