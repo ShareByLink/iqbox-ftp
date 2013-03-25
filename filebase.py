@@ -140,6 +140,12 @@ class File(Base):
             session.add(newfile)
             newfile.session = session
             return newfile
+        
+
+def empty_db():
+    session = Session()
+    
+    return session.query(File).count() == 0
             
 
 Base.metadata.create_all(engine)
