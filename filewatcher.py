@@ -5,6 +5,7 @@ from datetime import datetime as dt
 from PySide.QtCore import QObject, QCoreApplication, Slot, Signal, QTimer, QDir
 
 import syncapp
+from syncapp import pause_timer
 from filebase import File, Session
 
 
@@ -25,15 +26,16 @@ class FileWatcher(QObject):
     @Slot()
     def startCheckout(self):
         self.checkTimer = QTimer()
-        self.checkTimer.setInterval(5000)
+        self.checkTimer.setInterval(2000)
         self.checkTimer.timeout.connect(self.checkout)
         
         self.checkTimer.start()
-        
+    
+    @pause_timer
     @Slot()
     def checkout(self):
         check_date = dt.utcnow()
-
+        print 'Started local'
         for item in os.walk(self.localdir):
             directory = item[0]
             subfiles = item[-1]
@@ -67,14 +69,15 @@ class FileWatcher(QObject):
             self.fileDeleted.emit(FileWatcher.LOCATION, file_.path)
             
         session.commit()
+        print 'Ended local'
 
     @Slot(str)
     def added(self, location, serverpath):
-        print 'Added:', serverpath
+        print 'Added local:', serverpath
         
     @Slot(str)
     def changed(self, location, serverpath):
-        print 'Changed:', serverpath
+        print 'Changed local:', serverpath
         
     @Slot(str)
     def deleted(self, location, serverpath):
