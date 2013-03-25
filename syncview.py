@@ -1,6 +1,8 @@
+import os
 import sys
 import platform
 import traceback
+from datetime import datetime as dt
 
 from PySide.QtCore import Qt, Slot, Signal, QSettings, QDir, QThread, QTimer
 from PySide.QtGui import QWidget, QMainWindow, QApplication, QCheckBox
@@ -9,6 +11,7 @@ from PySide.QtGui import QHBoxLayout, QVBoxLayout, QPixmap, QFrame, QIcon, QSyst
 
 import crypt
 import resources
+from filebase import empty_db
 from syncapp import FtpObject
 from synccore import SyncCore
 from filewatcher import FileWatcher
@@ -65,7 +68,7 @@ class SyncWindow(QMainWindow):
         self.setWindowTitle('FTPSync')
         self.setWindowIcon(QIcon(QPixmap(':/resources/logobar.png')))
         self.statusBar().setFont(View.labelsFont())
-        self.ftpThread = None
+        self.syncThread = None
         
         # Initializes the window with a `LoginView` widget.
         self.loginView()
@@ -169,16 +172,23 @@ class SyncWindow(QMainWindow):
         self.watcher = FileWatcher(localdir)
         self.core = SyncCore(localdir)
         
-        self.ftpThread = QThread()
-        QApplication.instance().lastWindowClosed.connect(self.ftpThread.quit)
+        if empty_db():
+            # Do a checkout before connecting Signal/Slots. This will fill up
+            # the database in case it has been deleted, preventing unnecessary 
+            # downloads/uploads.
+            self.watcher.checkout()
+            self.sync.checkout()
         
-        self.core.moveToThread(self.ftpThread)
-        self.watcher.moveToThread(self.ftpThread)
-        self.sync.moveToThread(self.ftpThread)
+        self.syncThread = QThread()
+        QApplication.instance().lastWindowClosed.connect(self.syncThread.quit)
         
-        self.ftpThread.started.connect(self.core.initQueue)
-        self.ftpThread.started.connect(self.watcher.startCheckout)
-        self.ftpThread.started.connect(self.sync.startCheckout)
+        self.core.moveToThread(self.syncThread)
+        self.watcher.moveToThread(self.syncThread)
+        self.sync.moveToThread(self.syncThread)
+        
+        self.syncThread.started.connect(self.core.initQueue)
+        self.syncThread.started.connect(self.watcher.startCheckout)
+        self.syncThread.started.connect(self.sync.startCheckout)
         
         self.watcher.fileAdded.connect(self.watcher.added)
         self.watcher.fileChanged.connect(self.watcher.changed)
@@ -195,11 +205,7 @@ class SyncWindow(QMainWindow):
         self.core.downloadFile.connect(self.sync.onDownload)
         self.core.uploadFile.connect(self.sync.onUpload)
         
-        self.ftpThread.start()
-            
-        #self.core.initQueue()
-        #self.watcher.()
-        #self.sync.startCheckout()
+        self.syncThread.start()
 
         
     @Slot(int, int)
@@ -555,8 +561,20 @@ class SyncView(View):
             self.sync.emit(localdir)
 
 
+        
+
 if __name__ == '__main__':
-    sys.stderr = sys.stdout = open('log.txt', 'a')
+    # Redirect `` and `` to a file and add timestamps
+    # to all messages.
+    #sys.stderr = sys.stdout = open('log.txt', 'a')
+    f = sys.stdout
+    class F():
+        def write(self, data):
+            if data.strip(): 
+                #Only attach a timestamp to non whitespace prints.
+                data = '{0} {1}'.format(dt.utcnow().strftime('%Y-%m-%d %H:%M:%S'), data)
+            f.write(data)
+    sys.stderr = sys.stdout = F()
     
     app = QApplication(sys.argv)
     window = SyncWindow()
