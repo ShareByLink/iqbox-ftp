@@ -11,6 +11,21 @@ from PySide.QtCore import QObject, Signal, Slot, QTimer, QDir, QThread
 from filebase import File, Session
 
 
+def pause_timer(f):
+    def wrapped(self):
+        try:
+            self.checkTimer.stop()
+        except AttributeError:
+            pass
+        f(self)
+        try:
+            self.checkTimer.start()
+        except AttributeError:
+            pass
+        
+    return wrapped
+        
+
 class FtpObject(QObject):
     
     downloadProgress = Signal((int, int,))
@@ -71,6 +86,7 @@ class FtpObject(QObject):
         
         self.checkTimer.start()
     
+    @pause_timer
     @Slot()
     def checkout(self):
         """
@@ -79,9 +95,8 @@ class FtpObject(QObject):
         
         :param download: Indicates whether or not the files should be downloaded
         """
-    
-        self.checkTimer.stop()
-        
+
+        print 'Started server'
         # Handy list to keep track of the checkout process.
         # This lists contain absolute paths only.
         checked_dirs = list()
@@ -167,10 +182,8 @@ class FtpObject(QObject):
         self.uploadAll()
         self.downloadAll()
         
-        # Wraps up the checkout process, commits to the database and
-        # restarts the timer.`self.checked` is emitted when
-        # there are no pending FTP commands
-        self.checkTimer.start()
+        # Wraps up the checkout process, commits to the database,
+        # `self.checked` is emitted when there are no pending FTP commands
         self.checked.emit()
         session.commit()
                 
