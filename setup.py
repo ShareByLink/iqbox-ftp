@@ -1,5 +1,7 @@
 import sys
+
 from cx_Freeze import setup, Executable
+
 
 includefiles = ['key']
 includemodules = ['sqlite3', 'sqlalchemy', 'sqlalchemy.dialects.sqlite']
@@ -14,4 +16,4 @@ setup(name = 'IQBox',
       version = '0.1',
       description = 'FTP Sync application',
       options = {'build_exe': {'include_files': includefiles, 'includes': includemodules}},
-      executables = [Executable("syncview.py", base=base, targetName='IQBox.exe')])
+      executables = [Executable("iqbox.py", base=base, targetName='IQBox.exe')])

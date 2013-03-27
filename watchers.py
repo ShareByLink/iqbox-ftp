@@ -8,37 +8,71 @@ from ftplib import FTP_TLS, FTP, error_reply, error_perm
 
 from PySide.QtCore import QObject, Signal, Slot, QTimer, QDir, QThread
 
-from filebase import File, Session
+from dbcore import File, Session
+from localsettings import DEBUG
 
 
 def pause_timer(f):
     def wrapped(self):
+        if DEBUG:
+            print 'Started {0}'.format(self.LOCATION)
         try:
             self.checkTimer.stop()
         except AttributeError:
             pass
         f(self)
         try:
+            self.checked.emit()
             self.checkTimer.start()
         except AttributeError:
             pass
+        if DEBUG:
+            print 'Ended {0}'.format(self.LOCATION)
         
     return wrapped
         
 
-class FtpObject(QObject):
+class Watcher(QObject):
     
-    downloadProgress = Signal((int, int,))
-    uploadProgress = Signal((int, int,))
-    fileEvent = Signal((str,))
-    fileEventComplete = Signal()
-    checkedFile = Signal((str, dt,))
     fileDeleted = Signal((str,str,))
     fileAdded = Signal((str,str,))
     fileChanged = Signal((str,str,))
     checked = Signal()
+    LOCATION = 'undefined'
     
-    LOCATION = 'server'
+    def __init__(self, parent=None):
+        super(Watcher, self).__init__(parent)
+        
+    @Slot()
+    def checkout(self):
+        raise NotImplementedError
+    
+    @Slot()
+    def startCheckout(self):
+        self.checkTimer = QTimer()
+        self.checkTimer.setInterval(self.interval)
+        self.checkTimer.timeout.connect(self.checkout)
+        
+        self.checkTimer.start()
+        
+    @Slot(str, str)
+    def added(self, location, serverpath):
+        print 'Added {0}: {1}'.format(self.LOCATION, serverpath)
+        
+    @Slot(str, str)
+    def changed(self, location, serverpath):
+        print 'Changed {0}: {1}'.format(self.LOCATION, serverpath)
+        
+    @Slot(str, str)
+    def deleted(self, location, serverpath):
+        print 'Deleted {0}: {1}'.format(self.LOCATION, serverpath)
+
+class ServerWatcher(Watcher):
+    
+    downloadProgress = Signal((int, int,))
+    uploadProgress = Signal((int, int,))
+    fileEvent = Signal((str,))
+    fileEventComplete = Signal()    
     
     def __init__(self, host, ssl, parent=None):
         """
@@ -50,8 +84,10 @@ class FtpObject(QObject):
         :param parent: Reference to a `QObject` instance a parent
         """
         
-        super(FtpObject, self).__init__(parent)
+        super(ServerWatcher, self).__init__(parent)
         
+        self.interval = 5000
+        self.LOCATION = 'server'
         self.localdir = ''
         self.deleteQueue = []
         self.downloadQueue = []
@@ -76,14 +112,6 @@ class FtpObject(QObject):
         if not os.path.exists(self.localdir):
             os.makedirs(self.localdir)
     
-    @Slot()
-    def startCheckout(self):
-        self.checkTimer = QTimer()
-        self.checkTimer.setInterval(5000)
-        self.checkTimer.timeout.connect(self.checkout)
-        
-        self.checkTimer.start()
-    
     @pause_timer
     @Slot()
     def checkout(self):
@@ -93,8 +121,6 @@ class FtpObject(QObject):
         
         :param download: Indicates whether or not the files should be downloaded
         """
-
-        print 'Started server'
         
         # Check  `self.deleteQueue`, `self.uploadQueue` and `self.downloadQueue` queues.
         # These tasks are done in queues to make sure all FTP commands
@@ -143,11 +169,9 @@ class FtpObject(QObject):
                     
                     # Emit the signals after the attributes has been set and committed
                     if just_added is True:
-                        self.fileAdded.emit(FtpObject.LOCATION, serverpath)
+                        self.fileAdded.emit(ServerWatcher.LOCATION, serverpath)
                     elif server_file.servermdate > lastmdate:
-                        self.fileChanged.emit(FtpObject.LOCATION, serverpath)
-
-                    self.checkedFile.emit(serverpath, servermdate)
+                        self.fileChanged.emit(ServerWatcher.LOCATION, serverpath)
             
             dir_ready = True
             for dir_ in dir_subdirs:
@@ -179,11 +203,9 @@ class FtpObject(QObject):
         session = Session()
         deleted = session.query(File).filter(File.last_checked_server < check_date).filter(File.inserver == True)
         for file_ in deleted:
-            self.fileDeleted.emit(FtpObject.LOCATION, file_.path)
+            self.fileDeleted.emit(ServerWatcher.LOCATION, file_.path)
         
-        # Wraps up the checkout process, commits to the database,
-        # `self.checked` is emitted when there are no pending FTP commands
-        self.checked.emit()
+        # Wraps up the checkout process, commits to the database.
         session.commit()
                 
     def getFiles(self, path):
@@ -203,7 +225,7 @@ class FtpObject(QObject):
             
             return files
         except:
-            print 'Exception in FtpObject.getDirs'
+            print 'Exception in ServerWatcher.getDirs'
             info = traceback.format_exception(*sys.exc_info())
             for i in info: sys.stderr.write(i)
             return []
@@ -239,7 +261,7 @@ class FtpObject(QObject):
             
             return dirs
         except:
-            print 'Exception in FtpObject.getDirs'
+            print 'Exception in ServerWatcher.getDirs'
             info = traceback.format_exception(*sys.exc_info())
             for i in info: sys.stderr.write(i)
             return []
@@ -469,25 +491,70 @@ class FtpObject(QObject):
             # any folders
             self.ftp.cwd('/')
             return
-        
+            
+    @Slot(str, str)
+    def deleted(self, location, serverpath):
+        super(ServerWatcher, self).deleted(location, serverpath)
+        with File.fromPath(serverpath) as deleted:
+            deleted.inserver = False
+            
+            
+class LocalWatcher(Watcher):
     
-    @Slot(str, str)
-    def added(self, location, serverpath):
-        print 'Added Server:', serverpath
+    def __init__(self, localdir, parent=None):
+        super(LocalWatcher, self).__init__(parent)
         
-    @Slot(str, str)
-    def changed(self, location, serverpath):
-        print 'Changed Server:', serverpath
+        self.LOCATION = 'local'
+        self.localdir = localdir
+        self.interval = 2000
+    
+    @pause_timer
+    @Slot()
+    def checkout(self):
+        check_date = dt.utcnow()
+        for item in os.walk(self.localdir):
+            directory = item[0]
+            subfiles = item[-1]
+
+            for file_ in subfiles:
+                localpath = os.path.join(directory, file_)
+                serverpath = localpath.replace(self.localdir, '')
+                serverpath = QDir.fromNativeSeparators(serverpath)
+                localmdate = dt.utcfromtimestamp(os.path.getmtime(localpath))
+
+                with File.fromPath(serverpath) as local_file:
+                    just_added = not local_file.inlocal
+                    lastmdate = local_file.localmdate
+                         
+                    local_file.inlocal = True
+                    local_file.last_checked_local = check_date
+                    local_file.localmdate = localmdate
+                    
+                # Emit the signals after the attributes has been set
+                # and committed.
+                if just_added is True:
+                    self.fileAdded.emit(LocalWatcher.LOCATION, serverpath)
+                elif localmdate > lastmdate:
+                    self.fileChanged.emit(LocalWatcher.LOCATION, serverpath)
+
+        # Deleted files are the ones whose `last_checked_local` attribute 
+        # didn't get updated in the recursive run.
+        session = Session()
+        deleted = session.query(File).filter(File.last_checked_local < check_date).filter(File.inlocal == True)
+        for file_ in deleted:
+            self.fileDeleted.emit(LocalWatcher.LOCATION, file_.path)
+            
+        session.commit()
         
     @Slot(str, str)
     def deleted(self, location, serverpath):
+        super(LocalWatcher, self).deleted(location, serverpath)
         with File.fromPath(serverpath) as deleted:
-            deleted.inserver = False
-            print 'Deleted Server:', serverpath
+            deleted.inlocal = False
         
-    
+
 if __name__ == '__main__':
-    app3 = FtpObject('ops.osop.com.pa', False)
+    app3 = ServerWatcher('ops.osop.com.pa', False)
     app3.setLocalDir('/home/sergio/Documents/FTPSync/mareas')
     print app3.ftp.login('mareas', 'mareas123')
     time = app3.lastModified('/test.txt')
@@ -508,7 +575,7 @@ if __name__ == '__main__':
     app3.mkpath('/folder/other/one/two/three/four')
     raise SystemExit("Exit here please")
     
-    app2 = FtpObject('10.18.210.193', False)
+    app2 = ServerWatcher('10.18.210.193', False)
     app2.setLocalDir('/home/sergio/Documents/FTPSync/book')
     print app2.ftp.login('sergio', 'lopikljh')
     
@@ -524,7 +591,7 @@ if __name__ == '__main__':
     print 'Dirs in "/": %s' % app2.getDirs('/')
     print 'Files in "/": %s' % app2.getFiles('/')
 
-    app1 = FtpObject('ftp7.iqstorage.com', True)
+    app1 = ServerWatcher('ftp7.iqstorage.com', True)
     app1.ftp.login('serpulga', 'iqstorage')
     app1.setLocalDir('/home/sergio/Documents/FTPSync/iq')
     time = app1.lastModified('/4.89 MB Download.bin')

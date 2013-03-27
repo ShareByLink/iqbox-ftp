@@ -196,8 +196,4 @@ if __name__ == '__main__':
     for file_ in session.query(File):
         print file_
 
-
     print dir(session.query())
-
-
-    

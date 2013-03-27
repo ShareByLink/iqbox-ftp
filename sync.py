@@ -4,17 +4,17 @@ import traceback
 
 from PySide.QtCore import QObject, Slot, Signal, QTimer, QDir, QThread
 
-from filebase import File, FileAction, ActionQueue, Session
+from dbcore import File, FileAction, ActionQueue, Session
 
 
-class SyncCore(QObject):
+class Sync(QObject):
     
     deleteServerFile = Signal((str,))
     downloadFile = Signal((str,))
     uploadFile = Signal((str,))
     
     def __init__(self, localdir, parent=None):
-        super(SyncCore, self).__init__(parent)
+        super(Sync, self).__init__(parent)
         
         self.localdir = localdir
         self.localAdds = []
@@ -72,7 +72,7 @@ class SyncCore(QObject):
             session.commit()
             
     @Slot()
-    def onFtpDone(self):
+    def onServerDone(self):
         """
         Slot. Should be triggered when the FTP commads are all done,
         this method checks if the sync is complete        

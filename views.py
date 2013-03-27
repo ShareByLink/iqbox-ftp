@@ -1,267 +1,24 @@
-import os
-import sys
 import platform
-import traceback
-from datetime import datetime as dt
 
-from PySide.QtCore import Qt, Slot, Signal, QSettings, QDir, QThread, QTimer
-from PySide.QtGui import QWidget, QMainWindow, QApplication, QCheckBox
-from PySide.QtGui import QPushButton, QLabel, QLineEdit, QFont, QFileDialog, QMessageBox
-from PySide.QtGui import QHBoxLayout, QVBoxLayout, QPixmap, QFrame, QIcon, QSystemTrayIcon
+from PySide.QtGui import (
+      QWidget, QPixmap, QLabel, QFont, QFrame, QPushButton, 
+      QLineEdit, QHBoxLayout, QVBoxLayout, QCheckBox, QFileDialog)
+from PySide.QtCore import Signal, Slot, QDir, Qt
 
+from localsettings import get_settings, SettingsKeys
 import crypt
-import resources
-from filebase import empty_db
-from syncapp import FtpObject
-from synccore import SyncCore
-from filewatcher import FileWatcher
-
-
-resources.qInitResources()
-
-# To be used with the `QSettings` objects 
-SettingsKeys = {
-    'host': 'Host',
-    'username': 'Username',
-    'passwd': 'Password',
-    'localdir': 'LocalDir',
-    'ssl': 'SSL',
-    'synced': 'Synced'}
-
-# Selecting a good font family for each platform
-osname = platform.system()
-if osname == 'Windows':
-    fontfamily = 'Segoe UI'
-elif osname == 'Linux':
-    fontfamily = ''
-else:
-    fontfamily = '' 
-
-
-def get_settings():
-    """
-    Creates a `QSettings` object set up for the application.
-    Returns a `QSettings` object.
-    """
-    
-    return QSettings('IQStorage', 'FTPSync')
-
-
-class SyncWindow(QMainWindow):
-    """
-    Application main window. This class is meant to handle
-    every widget needed by the application, as well as other
-    needed global objects and behavior.
-    """
-    
-    failedLogIn = Signal()
-    
-    def __init__(self, parent=None):
-        super(SyncWindow, self).__init__(parent)
-        
-        # Sets up several UI aspects
-        self.tray = QSystemTrayIcon(self)
-        self.tray.setIcon(QIcon(QPixmap(':/resources/icon.png')))
-        self.tray.show()
-        
-        self.setStyleSheet('SyncWindow {background: white}')
-        self.setWindowTitle('FTPSync')
-        self.setWindowIcon(QIcon(QPixmap(':/resources/logobar.png')))
-        self.statusBar().setFont(View.labelsFont())
-        self.syncThread = None
-        
-        # Initializes the window with a `LoginView` widget.
-        self.loginView()
-        
-    def loginView(self):
-        """
-        Initializes a `LoginView` object and sets it up as the main window's
-        central widget.
-        """
-        
-        login = LoginView()
-        
-        login.login.connect(self.onLogin)
-        self.failedLogIn.connect(login.onFailedLogIn)
-        
-        self.setCentralWidget(login)
-        self.setFixedSize(login.size())
-        self.statusBar().hide()
-        
-    def syncView(self):
-        """
-        Initializes a `SyncView` object and sets it up as the main window's
-        central widget.
-        """        
-        
-        syncview = SyncView()
-        
-        self.setCentralWidget(syncview)
-        self.setFixedSize(syncview.size())
-        self.statusBar().show()
-        
-        syncview.sync.connect(self.onSync)
-        
-    def getFtp(self, host, ssl):
-        """
-        Creates an FTP object to be used by the application.
-        
-        :param host: Indicates the hostname of the FTP server
-        :param ssl: Indicates whether the FTP needs SSL support
-        """
-        
-        sync = FtpObject(host, ssl)
-        
-        sync.fileAdded.connect(sync.added)
-        sync.fileChanged.connect(sync.changed)
-        sync.fileDeleted.connect(sync.deleted)
-        sync.downloadProgress.connect(self.onDownloadProgress)
-        sync.uploadProgress.connect(self.onUploadProgress)
-        sync.fileEvent.connect(self.onFileEvent)
-        sync.fileEventComplete.connect(self.clearMessage)
-        
-        return sync
-   
-    @Slot(str, str, str, bool)
-    def onLogin(self, host, username, passwd, ssl):
-        """
-        Slot. Triggers a log in request to the server.
-        
-        :param host: Indicates the hostname of the FTP server
-        :param username: Username to log in into the FTP server
-        :param passwd: Password to log in into the FTP server
-        :param ssl: Indicates whether the FTP needs SSL support
-        """
-        
-        self.sync = self.getFtp(host, ssl)
-        
-        try:
-            loginResponse = self.sync.ftp.login(username, passwd)
-        except:
-            info = traceback.format_exception(*sys.exc_info())
-            for i in info: sys.stderr.write(i)
-            
-            warning = QMessageBox(self)
-            warning.setFont(View.labelsFont())
-            warning.setStyleSheet('QMessageBox {background: white}')
-            warning.setWindowTitle("Error")
-            warning.setText(
-                "Log in failed.\nPlease check your credentials and SSL settings.")
-            warning.setIcon(QMessageBox.Warning)
-            warning.addButton("Ok", QMessageBox.AcceptRole).setFont(View.editsFont())
-            warning.exec_()
-            
-            self.failedLogIn.emit()
-        else:
-            print loginResponse
-            if '230' in loginResponse:
-                # 230 in server response is good! Change current view
-                self.syncView()
-            else:
-                self.failedLogIn.emit()
-                
-    @Slot(str)
-    def onSync(self, localdir):
-        """
-        Slot. Triggers a server checkout.
-        
-        :param localdir: Absolute local directory path where to keep the files
-        """
-        
-        self.sync.setLocalDir(localdir)
-        self.watcher = FileWatcher(localdir)
-        self.core = SyncCore(localdir)
-        
-        if empty_db():
-            # Do a checkout before connecting Signal/Slots. This will fill up
-            # the database in case it has been deleted, preventing unnecessary 
-            # downloads/uploads.
-            self.watcher.checkout()
-            self.sync.checkout()
-        
-        self.syncThread = QThread()
-        QApplication.instance().lastWindowClosed.connect(self.syncThread.quit)
-        
-        self.core.moveToThread(self.syncThread)
-        self.watcher.moveToThread(self.syncThread)
-        self.sync.moveToThread(self.syncThread)
-        
-        self.syncThread.started.connect(self.core.initQueue)
-        self.syncThread.started.connect(self.watcher.startCheckout)
-        self.syncThread.started.connect(self.sync.startCheckout)
-        
-        self.watcher.fileAdded.connect(self.watcher.added)
-        self.watcher.fileChanged.connect(self.watcher.changed)
-        self.watcher.fileDeleted.connect(self.watcher.deleted)
-        self.watcher.fileAdded.connect(self.core.onAdded)
-        self.watcher.fileChanged.connect(self.core.onChanged)
-        self.watcher.fileDeleted.connect(self.core.onDeleted)
-        self.sync.fileAdded.connect(self.core.onAdded)
-        self.sync.fileChanged.connect(self.core.onChanged)
-        self.sync.fileDeleted.connect(self.core.onDeleted)
-        self.sync.checked.connect(self.core.onFtpDone)
-        
-        self.core.deleteServerFile.connect(self.sync.onDelete)
-        self.core.downloadFile.connect(self.sync.onDownload)
-        self.core.uploadFile.connect(self.sync.onUpload)
-        
-        self.syncThread.start()
-
-        
-    @Slot(int, int)
-    def onProgress(self, action, total, progress):
-        """
-        Slot. Triggers download progress update in the UI.
-        
-        :param total: Total size of the download in bytes
-        :param progress: Current downdload progress in bytes
-        """
-        
-        if progress <= 0:
-            return
-        else:
-            percent = (progress * 100) / total
-            self.statusBar().showMessage('%s %s %d%%' % (action, self.currentFile, percent))
-        
-    @Slot(int, int)
-    def onDownloadProgress(self, total, progress):
-        """
-        Slot. Triggers upload progress update in the UI.
-        
-        :param total: Total size of the download in bytes
-        :param progress: Current downdload progress in bytes
-        """
-        
-        self.onProgress('Downloading', total, progress)
-        
-    @Slot(int, int)
-    def onUploadProgress(self, total, progress):
-        """
-        Slot. Triggers download progress update in the UI.
-        
-        :param total: Total size of the download in bytes
-        :param progress: Current downdload progress in bytes
-        """
-        
-        self.onProgress('Uploading', total, progress)
-        
-    @Slot(str)
-    def onFileEvent(self, filename):
-        """
-        Slot. Updates the current download filename to be used in the UI
-        
-        :param filename: Name of the file that is being downloaded
-        """
-        
-        self.currentFile = filename
-          
-    @Slot()
-    def clearMessage(self):
-        self.statusBar().showMessage('')
-
 
 class View(QWidget):
     """Base `View` class. Defines behavior common in all views"""
+    # Selecting a good font family for each platform
+    osname = platform.system()
+    if osname == 'Windows':
+        fontFamily = 'Segoe UI'
+    elif osname == 'Linux':
+        fontFamily = ''
+    else:
+        fontFamily = ''
+    
     
     def __init__(self, parent=None):
         """
@@ -274,7 +31,7 @@ class View(QWidget):
         
     @staticmethod
     def labelsFont():
-        """Returns the `QFont` that `QLabels` should use"""
+        """Returns the `QFont` that `QLabels` should use"""   
         
         return View.font(True)
         
@@ -291,8 +48,8 @@ class View(QWidget):
         
         :param bold: Indicates whether or not the font will be bold
         """
-         
-        font = QFont(fontfamily, 9, 50, False)
+        
+        font = QFont(View.fontFamily, 9, 50, False)
         font.setBold(bold)
         
         return font
@@ -544,9 +301,6 @@ class SyncView(View):
             # If `localdir`'s value is good, store it using a `QSettings` object
             # and triggers a sync request.
             # Careful with '\' separators on Windows.
-            if not localdir.endswith('FTPSync'):
-                pass
-                #localdir = os.path.join(localdir, 'FTPSync')
             localdir = QDir.toNativeSeparators(localdir)
             get_settings().setValue(SettingsKeys['localdir'], localdir)
             self.localdirEdit.setText(localdir)
@@ -560,26 +314,3 @@ class SyncView(View):
             self.syncButton.setEnabled(False)
             self.sync.emit(localdir)
 
-
-        
-
-if __name__ == '__main__':
-    # Redirect `` and `` to a file and add timestamps
-    # to all messages.
-    #sys.stderr = sys.stdout = open('log.txt', 'a')
-    f = sys.stdout
-    class F():
-        def write(self, data):
-            if data.strip(): 
-                #Only attach a timestamp to non whitespace prints.
-                data = '{0} {1}'.format(dt.utcnow().strftime('%Y-%m-%d %H:%M:%S'), data)
-            f.write(data)
-    sys.stderr = sys.stdout = F()
-    
-    app = QApplication(sys.argv)
-    window = SyncWindow()
-    font = QFont(fontfamily, 12, 50, False)
-    
-    app.setFont(font)
-    window.show()
-    sys.exit(app.exec_())
