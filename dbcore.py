@@ -4,16 +4,19 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean
 
 
-engine = create_engine('sqlite:///filestore.db', echo=False)
+engine = create_engine('sqlite:///iqmeta.db', echo=False)
 Session = sessionmaker(bind=engine)
 Base = declarative_base()
 
 class ActionQueue(object):
     
-    def __init__(self):
+    def __init__(self, actions=[]):
         super(ActionQueue, self).__init__()
         
         self.session = Session()
+        self.clear()
+        for action in actions:
+            self.add(action)
         
     def __len__(self):
         return self.session.query(FileAction).count()
@@ -116,6 +119,9 @@ class File(Base):
     
     def __exit__(self, *args):
         self.session.commit()
+        
+    def timeDiff(self):
+        return (self.localmdate - self.servermdate).total_seconds()
         
     @classmethod
     def fromPath(cls, path):
