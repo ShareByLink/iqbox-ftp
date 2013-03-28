@@ -8,6 +8,7 @@ from PySide.QtCore import Signal, Slot, QDir, Qt
 from localsettings import get_settings, SettingsKeys
 import crypt
 
+
 class View(QWidget):
     """Base `View` class. Defines behavior common in all views"""
     # Selecting a good font family for each platform
