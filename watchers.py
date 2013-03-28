@@ -8,14 +8,15 @@ from ftplib import FTP_TLS, FTP, error_reply, error_perm
 
 from PySide.QtCore import QObject, Signal, Slot, QTimer, QDir, QThread
 
-from dbcore import File, Session
+from dbcore import File, FileAction, Session
 from localsettings import DEBUG
 
 
 def pause_timer(f):
     def wrapped(self):
         if DEBUG:
-            print 'Started {0}'.format(self.LOCATION)
+            #print 'Started {0}'.format(self.LOCATION)
+            pass
         try:
             self.checkTimer.stop()
         except AttributeError:
@@ -27,18 +28,21 @@ def pause_timer(f):
         except AttributeError:
             pass
         if DEBUG:
-            print 'Ended {0}'.format(self.LOCATION)
+            #print 'Ended {0}'.format(self.LOCATION)
+            pass
         
     return wrapped
         
 
 class Watcher(QObject):
-    
+
     fileDeleted = Signal((str,str,))
     fileAdded = Signal((str,str,))
     fileChanged = Signal((str,str,))
     checked = Signal()
+    
     LOCATION = 'undefined'
+    TOLERANCE = 5
     
     def __init__(self, parent=None):
         super(Watcher, self).__init__(parent)
@@ -67,8 +71,23 @@ class Watcher(QObject):
     def deleted(self, location, serverpath):
         print 'Deleted {0}: {1}'.format(self.LOCATION, serverpath)
 
+    def localFromServer(self, serverpath):
+        # Removing leading '/' so `os.path.join` doesn't treat
+        # `localpath` as an absolute path
+        localpath = serverpath[1:] if serverpath.startswith('/') else serverpath
+        localpath = QDir.toNativeSeparators(localpath)
+        localpath = os.path.join(self.localdir, localpath)
+        
+        return localpath
+        
+    def serverFromLocal(self, localpath):
+        serverpath = localpath.replace(self.localdir, '')
+        serverpath = QDir.fromNativeSeparators(serverpath)
+        
+        return serverpath
+
 class ServerWatcher(Watcher):
-    
+
     downloadProgress = Signal((int, int,))
     uploadProgress = Signal((int, int,))
     fileEvent = Signal((str,))
@@ -87,12 +106,15 @@ class ServerWatcher(Watcher):
         super(ServerWatcher, self).__init__(parent)
         
         self.interval = 5000
-        self.LOCATION = 'server'
+        ServerWatcher.LOCATION = 'server'
         self.localdir = ''
         self.deleteQueue = []
         self.downloadQueue = []
         self.uploadQueue = []
         self.ftp = FTP_TLS(host) if ssl is True else FTP(host)
+        
+        self.preemptiveCheck = False
+        self.preemptiveActions = []
 
     @property
     def currentdir(self):
@@ -167,11 +189,15 @@ class ServerWatcher(Watcher):
                     server_file.servermdate = servermdate
                     server_file.session.commit()
                     
+                    delta = 0
+                    if server_file.inlocal:
+                        delta = server_file.timeDiff()
+
                     # Emit the signals after the attributes has been set and committed
                     if just_added is True:
                         self.fileAdded.emit(ServerWatcher.LOCATION, serverpath)
-                    elif server_file.servermdate > lastmdate:
-                        self.fileChanged.emit(ServerWatcher.LOCATION, serverpath)
+                    elif server_file.servermdate > lastmdate or delta < -Watcher.TOLERANCE:
+                        self.fileChanged.emit(ServerWatcher.LOCATION, serverpath) 
             
             dir_ready = True
             for dir_ in dir_subdirs:
@@ -338,11 +364,7 @@ class ServerWatcher(Watcher):
         
         
         if localpath is None:
-            # Gets the absolute local file path corresponding to the file `filename`
-            # removing '/' at the beginnig of `filename` so the `os.path.join` call works
-            localpath = filename[1:] if filename.startswith('/') else filename
-            localpath = QDir.toNativeSeparators(localpath)
-            localpath = os.path.join(self.localdir, localpath)
+            localpath = self.localFromServer(filename)
         
         localdir = os.path.dirname(localpath)
         if not os.path.exists(localdir):
@@ -412,14 +434,11 @@ class ServerWatcher(Watcher):
             self.upload_progress += 1024
             self.uploadProgress.emit(self.upload_size, self.upload_progress)
         
-        # Removes leading separator
-        localpath = filename[1:] if filename.startswith('/') else filename
-        localpath = QDir.toNativeSeparators(localpath)
-        localpath = os.path.join(self.localdir, localpath)
         
         # Creates the directory where the file will be uploaded to
         self.mkpath(os.path.dirname(filename))
         
+        localpath = self.localFromServer(filename)
         print 'Uploading %s to %s' % (localpath, filename)
         
         try:
@@ -493,6 +512,19 @@ class ServerWatcher(Watcher):
             return
             
     @Slot(str, str)
+    def added(self, location, serverpath):
+        super(ServerWatcher, self).added(location, serverpath)
+        if self.preemptiveCheck:
+            localpath = self.localFromServer(serverpath)
+            if not os.path.exists(localpath):
+                action = FileAction(serverpath, FileAction.DOWNLOAD, self.LOCATION)
+                self.preemptiveActions.append(action)
+        
+    @Slot(str, str)
+    def changed(self, location, serverpath):
+        super(ServerWatcher, self).changed(location, serverpath)
+            
+    @Slot(str, str)
     def deleted(self, location, serverpath):
         super(ServerWatcher, self).deleted(location, serverpath)
         with File.fromPath(serverpath) as deleted:
@@ -504,7 +536,7 @@ class LocalWatcher(Watcher):
     def __init__(self, localdir, parent=None):
         super(LocalWatcher, self).__init__(parent)
         
-        self.LOCATION = 'local'
+        LocalWatcher.LOCATION = 'local'
         self.localdir = localdir
         self.interval = 2000
     
@@ -518,9 +550,8 @@ class LocalWatcher(Watcher):
 
             for file_ in subfiles:
                 localpath = os.path.join(directory, file_)
-                serverpath = localpath.replace(self.localdir, '')
-                serverpath = QDir.fromNativeSeparators(serverpath)
-                localmdate = dt.utcfromtimestamp(os.path.getmtime(localpath))
+                localmdate = LocalWatcher.utcTimeStamp(localpath)
+                serverpath = self.serverFromLocal(localpath)
 
                 with File.fromPath(serverpath) as local_file:
                     just_added = not local_file.inlocal
@@ -530,11 +561,15 @@ class LocalWatcher(Watcher):
                     local_file.last_checked_local = check_date
                     local_file.localmdate = localmdate
                     
+                    delta = 0
+                    if local_file.inserver:
+                        delta = local_file.timeDiff()
+                    
                 # Emit the signals after the attributes has been set
                 # and committed.
                 if just_added is True:
                     self.fileAdded.emit(LocalWatcher.LOCATION, serverpath)
-                elif localmdate > lastmdate:
+                elif localmdate > lastmdate or delta > Watcher.TOLERANCE:
                     self.fileChanged.emit(LocalWatcher.LOCATION, serverpath)
 
         # Deleted files are the ones whose `last_checked_local` attribute 
@@ -546,6 +581,10 @@ class LocalWatcher(Watcher):
             
         session.commit()
         
+    @classmethod
+    def utcTimeStamp(cls, localpath):
+        return dt.utcfromtimestamp(os.path.getmtime(localpath))
+        
     @Slot(str, str)
     def deleted(self, location, serverpath):
         super(LocalWatcher, self).deleted(location, serverpath)
@@ -554,6 +593,13 @@ class LocalWatcher(Watcher):
         
 
 if __name__ == '__main__':
+    
+    localApp = LocalWatcher('C:\\Windows\\win32')
+    localpath = localApp.localFromServer('/home/text.cc')
+    serverpath = localApp.serverFromLocal(localpath)
+    
+    print serverpath, localpath
+    
     app3 = ServerWatcher('ops.osop.com.pa', False)
     app3.setLocalDir('/home/sergio/Documents/FTPSync/mareas')
     print app3.ftp.login('mareas', 'mareas123')

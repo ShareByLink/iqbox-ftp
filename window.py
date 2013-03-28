@@ -83,17 +83,15 @@ class SyncWindow(QMainWindow):
         :param ssl: Indicates whether the FTP needs SSL support
         """
         
-        server = ServerWatcher(host, ssl)
+        self.server = ServerWatcher(host, ssl)
 
-        server.fileAdded.connect(server.added)
-        server.fileChanged.connect(server.changed)
-        server.fileDeleted.connect(server.deleted)
-        server.downloadProgress.connect(self.onDownloadProgress)
-        server.uploadProgress.connect(self.onUploadProgress)
-        server.fileEvent.connect(self.onFileEvent)
-        server.fileEventComplete.connect(self.clearMessage)
-        
-        return server
+        self.server.fileAdded.connect(self.server.added)
+        self.server.fileChanged.connect(self.server.changed)
+        self.server.fileDeleted.connect(self.server.deleted)
+        self.server.downloadProgress.connect(self.onDownloadProgress)
+        self.server.uploadProgress.connect(self.onUploadProgress)
+        self.server.fileEvent.connect(self.onFileEvent)
+        self.server.fileEventComplete.connect(self.clearMessage)
    
     @Slot(str, str, str, bool)
     def onLogin(self, host, username, passwd, ssl):
@@ -106,7 +104,7 @@ class SyncWindow(QMainWindow):
         :param ssl: Indicates whether the FTP needs SSL support
         """
         
-        self.server = self.getServerWatcher(host, ssl)
+        self.getServerWatcher(host, ssl)
         
         try:
             loginResponse = self.server.ftp.login(username, passwd)
@@ -140,17 +138,21 @@ class SyncWindow(QMainWindow):
         
         :param localdir: Absolute local directory path where to keep the files
         """
-        
+
         self.server.setLocalDir(localdir)
         self.local = LocalWatcher(localdir)
-        self.sync = Sync(localdir)
         
         if dbcore.empty_db():
             # Do a checkout before connecting Signal/Slots. This will fill up
             # the database in case it has been deleted, preventing unnecessary 
             # downloads/uploads.
+            self.server.preemptiveCheck = True
             self.local.checkout()
             self.server.checkout()
+        
+        # Initializes the `Sync` object passing any actions resulting from 
+        # the preemptive checkout.
+        self.sync = Sync(localdir, self.server.preemptiveActions)
         
         self.syncThread = QThread()
         QApplication.instance().lastWindowClosed.connect(self.syncThread.quit)
@@ -163,23 +165,23 @@ class SyncWindow(QMainWindow):
         self.syncThread.started.connect(self.local.startCheckout)
         self.syncThread.started.connect(self.server.startCheckout)
         
-        self.local.fileAdded.connect(self.local.added)
-        self.local.fileChanged.connect(self.local.changed)
-        self.local.fileDeleted.connect(self.local.deleted)
-        self.local.fileAdded.connect(self.sync.onAdded)
-        self.local.fileChanged.connect(self.sync.onChanged)
-        self.local.fileDeleted.connect(self.sync.onDeleted)
         self.server.fileAdded.connect(self.sync.onAdded)
         self.server.fileChanged.connect(self.sync.onChanged)
         self.server.fileDeleted.connect(self.sync.onDeleted)
         self.server.checked.connect(self.sync.onServerDone)
+        
+        self.local.fileAdded.connect(self.sync.onAdded)
+        self.local.fileChanged.connect(self.sync.onChanged)
+        self.local.fileDeleted.connect(self.sync.onDeleted)
+        self.local.fileAdded.connect(self.local.added)
+        self.local.fileChanged.connect(self.local.changed)
+        self.local.fileDeleted.connect(self.local.deleted)
         
         self.sync.deleteServerFile.connect(self.server.onDelete)
         self.sync.downloadFile.connect(self.server.onDownload)
         self.sync.uploadFile.connect(self.server.onUpload)
         
         self.syncThread.start()
-
         
     @Slot(int, int)
     def onProgress(self, action, total, progress):
