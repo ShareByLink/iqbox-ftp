@@ -15,7 +15,7 @@ from localsettings import DEBUG
 def pause_timer(f):
     def wrapped(self):
         if DEBUG:
-            #print 'Started {0}'.format(self.LOCATION)
+            print 'Started {0}'.format(self.LOCATION)
             pass
         try:
             self.checkTimer.stop()
@@ -28,7 +28,7 @@ def pause_timer(f):
         except AttributeError:
             pass
         if DEBUG:
-            #print 'Ended {0}'.format(self.LOCATION)
+            print 'Ended {0}'.format(self.LOCATION)
             pass
         
     return wrapped
@@ -41,7 +41,6 @@ class Watcher(QObject):
     fileChanged = Signal((str,str,))
     checked = Signal()
     
-    LOCATION = 'undefined'
     TOLERANCE = 5
     
     def __init__(self, parent=None):
@@ -93,6 +92,8 @@ class ServerWatcher(Watcher):
     fileEvent = Signal((str,))
     fileEventComplete = Signal()    
     
+    LOCATION = 'server'
+    
     def __init__(self, host, ssl, parent=None):
         """
         Initializes parent class and attributes. Decides
@@ -106,7 +107,6 @@ class ServerWatcher(Watcher):
         super(ServerWatcher, self).__init__(parent)
         
         self.interval = 5000
-        ServerWatcher.LOCATION = 'server'
         self.localdir = ''
         self.deleteQueue = []
         self.downloadQueue = []
@@ -388,8 +388,7 @@ class ServerWatcher(Watcher):
                 # Let's set the same modified time on the server to match
                 # the one in local.          
                 with File.fromPath(filename) as downloadedfile:
-                    mdate = dt.utcfromtimestamp(os.path.getmtime(localpath)) 
-                    
+                    mdate = LocalWatcher.lastModified(localpath)
                     downloadedfile.localmdate = mdate
                     downloadedfile.servermdate = mdate
                     
@@ -455,6 +454,7 @@ class ServerWatcher(Watcher):
             with File.fromPath(filename) as uploaded:
                 modified = uploaded.localmdate
                 uploaded.servermdate = modified
+                
                 self.ftp.sendcmd('MDTM %s %s' % (modified.strftime('%Y%m%d%H%M%S'), filename))
             
             uploaded = True
@@ -517,9 +517,20 @@ class ServerWatcher(Watcher):
         if self.preemptiveCheck:
             localpath = self.localFromServer(serverpath)
             if not os.path.exists(localpath):
-                action = FileAction(serverpath, FileAction.DOWNLOAD, self.LOCATION)
+                action = FileAction(serverpath, FileAction.DOWNLOAD, ServerWatcher.LOCATION)
                 self.preemptiveActions.append(action)
-        
+            else: 
+                f = File()
+                f.servermdate = self.lastModified(serverpath)
+                f.localmdate = LocalWatcher.lastModified(self.localFromServer(serverpath))
+                diff = f.timeDiff()
+                if abs(diff) > Watcher.TOLERANCE:
+                    if diff > 0:
+                        action = FileAction(serverpath, FileAction.UPLOAD, ServerWatcher.LOCATION)
+                    else:
+                        action = FileAction(serverpath, FileAction.DOWNLOAD, LocalWatcher.LOCATION)
+                    self.preemptiveActions.append(action)
+    
     @Slot(str, str)
     def changed(self, location, serverpath):
         super(ServerWatcher, self).changed(location, serverpath)
@@ -533,10 +544,11 @@ class ServerWatcher(Watcher):
             
 class LocalWatcher(Watcher):
     
+    LOCATION = 'local'
+    
     def __init__(self, localdir, parent=None):
         super(LocalWatcher, self).__init__(parent)
         
-        LocalWatcher.LOCATION = 'local'
         self.localdir = localdir
         self.interval = 2000
     
@@ -550,7 +562,7 @@ class LocalWatcher(Watcher):
 
             for file_ in subfiles:
                 localpath = os.path.join(directory, file_)
-                localmdate = LocalWatcher.utcTimeStamp(localpath)
+                localmdate = LocalWatcher.lastModified(localpath)
                 serverpath = self.serverFromLocal(localpath)
 
                 with File.fromPath(serverpath) as local_file:
@@ -582,7 +594,7 @@ class LocalWatcher(Watcher):
         session.commit()
         
     @classmethod
-    def utcTimeStamp(cls, localpath):
+    def lastModified(cls, localpath):
         return dt.utcfromtimestamp(os.path.getmtime(localpath))
         
     @Slot(str, str)

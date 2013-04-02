@@ -152,6 +152,7 @@ class SyncWindow(QMainWindow):
         
         # Initializes the `Sync` object passing any actions resulting from 
         # the preemptive checkout.
+        self.server.preemptiveCheck = False
         self.sync = Sync(localdir, self.server.preemptiveActions)
         
         self.syncThread = QThread()
@@ -162,13 +163,10 @@ class SyncWindow(QMainWindow):
         self.server.moveToThread(self.syncThread)
         
         self.syncThread.started.connect(self.sync.initQueue)
-        self.syncThread.started.connect(self.local.startCheckout)
-        self.syncThread.started.connect(self.server.startCheckout)
         
         self.server.fileAdded.connect(self.sync.onAdded)
         self.server.fileChanged.connect(self.sync.onChanged)
         self.server.fileDeleted.connect(self.sync.onDeleted)
-        self.server.checked.connect(self.sync.onServerDone)
         
         self.local.fileAdded.connect(self.sync.onAdded)
         self.local.fileChanged.connect(self.sync.onChanged)
@@ -176,6 +174,9 @@ class SyncWindow(QMainWindow):
         self.local.fileAdded.connect(self.local.added)
         self.local.fileChanged.connect(self.local.changed)
         self.local.fileDeleted.connect(self.local.deleted)
+        
+        self.sync.checkServer.connect(self.server.checkout)
+        self.sync.checkLocal.connect(self.local.checkout)
         
         self.sync.deleteServerFile.connect(self.server.onDelete)
         self.sync.downloadFile.connect(self.server.onDownload)

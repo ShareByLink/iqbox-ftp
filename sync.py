@@ -12,13 +12,13 @@ class Sync(QObject):
     deleteServerFile = Signal((str,))
     downloadFile = Signal((str,))
     uploadFile = Signal((str,))
+    checkServer = Signal()
+    checkLocal = Signal()
     
     def __init__(self, localdir, actions=[], parent=None):
         super(Sync, self).__init__(parent)
         
         self.localdir = localdir
-        self.localAdds = []
-        self.serverAdds = []
         self.preloaedActions = actions
         
     @Slot()
@@ -63,34 +63,23 @@ class Sync(QObject):
                         elif location == FileAction.SERVER:
                             self.deleteServerFile.emit(path)
                             deleted_file.inserver = False
-
+                        
+        self.cleanSync()
         self.actionQueue.clear()
+        self.checkServer.emit()
+        self.checkLocal.emit()
         self.actionTimer.start()
             
     @Slot()
-    def onServerDone(self):
+    def cleanSync(self):
         """
-        Slot. Should be triggered when the FTP commads are all done,
-        this method checks if the sync is complete        
+        Removes entries from the database for deleted files
         """
 
-        # This method will be used as a sync fallback.
-        # In case `self.actionQueue`, the database will be
-        # queries looking for unsynced files. 
-        if len(self.actionQueue) == 0:
-            session = Session()
-
-            session.query(File).filter(File.inserver == False).filter(File.inlocal == False).delete()
-            session.commit()
-            
-            for file_ in session.query(File).filter(File.inserver != File.inlocal):
-                # Unsynced: In one place but not the other.
-                if file_.inserver:
-                    location = FileAction.SERVER
-                else:
-                    location = FileAction.LOCAL
-                self.onAdded(location, file_.path)
-        
+        session = Session()
+        session.query(File).filter(File.inserver == False).filter(File.inlocal == False).delete()
+        session.commit()
+    
     @Slot(str, str)
     def onChanged(self, location, serverpath):
         changed_file = File.fromPath(serverpath)
@@ -146,7 +135,6 @@ class Sync(QObject):
         
     @Slot(str, str)
     def onDeleted(self, location, serverpath):
-        print 'ondeleted'
         deleted_file = File.fromPath(serverpath)
         action = None
         
