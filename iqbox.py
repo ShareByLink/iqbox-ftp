@@ -20,6 +20,7 @@ if __name__ == '__main__':
                 # Only attach a timestamp to non whitespace prints.
                 data = '{0} {1}'.format(dt.utcnow().strftime('%Y-%m-%d %H:%M:%S'), data)
             f.write(data)
+            f.flush()
     sys.stderr = sys.stdout = F()
     
     app = QApplication(sys.argv)
