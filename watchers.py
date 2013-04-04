@@ -15,7 +15,7 @@ from localsettings import DEBUG
 def pause_timer(f):
     def wrapped(self):
         if DEBUG:
-            print 'Started {0}'.format(self.LOCATION)
+            #print 'Started {0}'.format(self.LOCATION)
             pass
         try:
             self.checkTimer.stop()
@@ -28,7 +28,7 @@ def pause_timer(f):
         except AttributeError:
             pass
         if DEBUG:
-            print 'Ended {0}'.format(self.LOCATION)
+            #print 'Ended {0}'.format(self.LOCATION)
             pass
         
     return wrapped
@@ -458,8 +458,8 @@ class ServerWatcher(Watcher):
                 self.ftp.sendcmd('MDTM %s %s' % (modified.strftime('%Y%m%d%H%M%S'), filename))
             
             uploaded = True
-        except (error_reply, error_perm) as ftperr:
-            print 'Error uploading %s, %s' % (filename, ftperr)
+        except (error_reply, error_perm, OSError) as err:
+            print 'Error uploading %s, %s' % (filename, err)
             uploaded = False
             
         self.fileEventComplete.emit()
@@ -514,23 +514,47 @@ class ServerWatcher(Watcher):
     @Slot(str, str)
     def added(self, location, serverpath):
         super(ServerWatcher, self).added(location, serverpath)
+        
+        def actionFromPath(serverpath):
+            f = File()
+            f.servermdate = self.lastModified(serverpath)
+            f.localmdate = LocalWatcher.lastModified(self.localFromServer(serverpath))
+            diff = f.timeDiff()
+            action = None
+            if abs(diff) > Watcher.TOLERANCE:
+                if diff > 0:
+                    action = FileAction(serverpath, FileAction.UPLOAD, ServerWatcher.LOCATION)
+                else:
+                    action = FileAction(serverpath, FileAction.DOWNLOAD, LocalWatcher.LOCATION)
+            
+            return action
+            
         if self.preemptiveCheck:
-            localpath = self.localFromServer(serverpath)
-            if not os.path.exists(localpath):
-                action = FileAction(serverpath, FileAction.DOWNLOAD, ServerWatcher.LOCATION)
-                self.preemptiveActions.append(action)
-            else: 
-                f = File()
-                f.servermdate = self.lastModified(serverpath)
-                f.localmdate = LocalWatcher.lastModified(self.localFromServer(serverpath))
-                diff = f.timeDiff()
-                if abs(diff) > Watcher.TOLERANCE:
-                    if diff > 0:
-                        action = FileAction(serverpath, FileAction.UPLOAD, ServerWatcher.LOCATION)
-                    else:
-                        action = FileAction(serverpath, FileAction.DOWNLOAD, LocalWatcher.LOCATION)
+            if location == ServerWatcher.LOCATION:
+                localpath = self.localFromServer(serverpath)
+                if not os.path.exists(localpath):
+                    action = FileAction(serverpath, FileAction.DOWNLOAD, ServerWatcher.LOCATION)
                     self.preemptiveActions.append(action)
-    
+                else:
+                    action = actionFromPath(serverpath)
+                    if action is not None:
+                        self.preemptiveActions.append(action) 
+
+            elif location == LocalWatcher.LOCATION:
+                try:
+                    self.ftp.sendcmd('SIZE %s' % serverpath)
+                except (error_reply, error_perm):
+                    exists = False
+                else:
+                    exists = True
+                if not exists:
+                    action = FileAction(serverpath, FileAction.UPLOAD, LocalWatcher.LOCATION)
+                    self.preemptiveActions.append(action)
+                else:
+                    action = actionFromPath(serverpath)
+                    if action is not None:
+                        self.preemptiveActions.append(action) 
+
     @Slot(str, str)
     def changed(self, location, serverpath):
         super(ServerWatcher, self).changed(location, serverpath)

@@ -147,8 +147,10 @@ class SyncWindow(QMainWindow):
             # the database in case it has been deleted, preventing unnecessary 
             # downloads/uploads.
             self.server.preemptiveCheck = True
+            self.local.fileAdded.connect(self.server.added)
             self.local.checkout()
             self.server.checkout()
+            self.local.fileAdded.disconnect(self.server.added)
         
         # Initializes the `Sync` object passing any actions resulting from 
         # the preemptive checkout.

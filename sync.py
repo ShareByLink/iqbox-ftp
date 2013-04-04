@@ -64,10 +64,10 @@ class Sync(QObject):
                             self.deleteServerFile.emit(path)
                             deleted_file.inserver = False
                         
-        self.cleanSync()
         self.actionQueue.clear()
         self.checkServer.emit()
         self.checkLocal.emit()
+        self.cleanSync()
         self.actionTimer.start()
             
     @Slot()
@@ -75,11 +75,11 @@ class Sync(QObject):
         """
         Removes entries from the database for deleted files
         """
-
+        
         session = Session()
         session.query(File).filter(File.inserver == False).filter(File.inlocal == False).delete()
         session.commit()
-    
+
     @Slot(str, str)
     def onChanged(self, location, serverpath):
         changed_file = File.fromPath(serverpath)
