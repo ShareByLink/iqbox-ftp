@@ -27,6 +27,7 @@ class Sync(QObject):
         
     def connections(self):
         if not self.connected:
+            self.connected = True
             self.server.fileAdded.connect(self.onAdded)
             self.server.fileChanged.connect(self.onChanged)
             self.server.fileDeleted.connect(self.onDeleted)
