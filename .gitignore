@@ -7,3 +7,4 @@ key
 *.project
 *.pydevproject
 log.txt
+*.swp
