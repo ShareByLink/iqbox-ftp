@@ -4,7 +4,7 @@ import traceback
 
 from PySide.QtCore import QObject, Slot, Signal, QTimer, QDir, QThread
 
-from dbcore import File, FileAction, ActionQueue, Session
+from dbcore import File, FileAction, ActionQueue, Session, empty_db
 
 
 class Sync(QObject):
@@ -15,15 +15,36 @@ class Sync(QObject):
     checkServer = Signal()
     checkLocal = Signal()
     
-    def __init__(self, localdir, actions=[], parent=None):
+    def __init__(self, local, server, parent=None):
         super(Sync, self).__init__(parent)
         
-        self.localdir = localdir
-        self.preloaedActions = actions
+        self.local = local
+        self.server = server
+        self.localdir = self.local.localdir
+        self.preloaedActions = []
+        self.doPreemptive = empty_db()
+        self.connected = False
         
+    def connections(self):
+        if not self.connected:
+            self.server.fileAdded.connect(self.onAdded)
+            self.server.fileChanged.connect(self.onChanged)
+            self.server.fileDeleted.connect(self.onDeleted)
+
+            self.local.fileAdded.connect(self.onAdded)
+            self.local.fileChanged.connect(self.onChanged)
+            self.local.fileDeleted.connect(self.onDeleted)
+            self.local.fileAdded.connect(self.local.added)
+            self.local.fileChanged.connect(self.local.changed)
+            self.local.fileDeleted.connect(self.local.deleted)
+
+            self.deleteServerFile.connect(self.server.onDelete)
+            self.downloadFile.connect(self.server.onDownload)
+            self.uploadFile.connect(self.server.onUpload)
+
     @Slot()
     def initQueue(self):
-        self.actionQueue = ActionQueue(self.preloaedActions)
+        self.actionQueue = ActionQueue()
         
         self.actionTimer = QTimer()
         self.actionTimer.setInterval(5000)
@@ -34,6 +55,24 @@ class Sync(QObject):
     @Slot()
     def takeAction(self):
         self.actionTimer.stop()
+
+        if self.doPreemptive:
+            # Preemptive check is a bit of a workaround to deal with
+            # initial unexpected conditions: database file is gone
+            self.doPreemptive = False
+            self.server.preemptiveCheck = True
+            self.local.fileAdded.connect(self.server.added)
+            self.local.checkout()
+            self.server.checkout()
+            self.local.fileAdded.disconnect(self.server.added)
+            self.server.preemptiveCheck = False
+            for action in self.server.preemptiveActions:
+                self.actionQueue.add(action)
+        
+        # After preemptive check, it is safe to do the connections
+        # for normal operations
+        self.connections()
+
         for action in self.actionQueue:
             if action is not None:
                 print 'Next action: %s' % action 
@@ -50,9 +89,7 @@ class Sync(QObject):
                         # `action.location` attribute only makes sense when deciding
                         # whether to delete a file on the server or local.
                         if location == FileAction.LOCAL:
-                            localpath = path[1:] if path.startswith('/') else path
-                            localpath = QDir.toNativeSeparators(localpath)
-                            localpath = os.path.join(self.localdir, localpath)
+                            localpath = self.local.localFromServer(path)
                             
                             try:
                                 os.remove(localpath)
@@ -63,10 +100,10 @@ class Sync(QObject):
                         elif location == FileAction.SERVER:
                             self.deleteServerFile.emit(path)
                             deleted_file.inserver = False
-                        
+        
         self.actionQueue.clear()
-        self.checkServer.emit()
-        self.checkLocal.emit()
+        self.server.checkout()
+        self.local.checkout()
         self.cleanSync()
         self.actionTimer.start()
             

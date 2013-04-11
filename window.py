@@ -9,7 +9,6 @@ from PySide.QtGui import (
       QMainWindow, QApplication,
       QMessageBox, QIcon, QSystemTrayIcon, QPixmap)
 
-import dbcore   
 import resources
 from sync import Sync
 from views import SyncView, LoginView, View
@@ -130,7 +129,7 @@ class SyncWindow(QMainWindow):
                 self.syncView()
             else:
                 self.failedLogIn.emit()
-                
+
     @Slot(str)
     def onSync(self, localdir):
         """
@@ -141,21 +140,10 @@ class SyncWindow(QMainWindow):
 
         self.server.setLocalDir(localdir)
         self.local = LocalWatcher(localdir)
-        
-        if dbcore.empty_db():
-            # Do a checkout before connecting Signal/Slots. This will fill up
-            # the database in case it has been deleted, preventing unnecessary 
-            # downloads/uploads.
-            self.server.preemptiveCheck = True
-            self.local.fileAdded.connect(self.server.added)
-            self.local.checkout()
-            self.server.checkout()
-            self.local.fileAdded.disconnect(self.server.added)
-        
+
         # Initializes the `Sync` object passing any actions resulting from 
         # the preemptive checkout.
-        self.server.preemptiveCheck = False
-        self.sync = Sync(localdir, self.server.preemptiveActions)
+        self.sync = Sync(self.local, self.server)
         
         self.syncThread = QThread()
         QApplication.instance().lastWindowClosed.connect(self.syncThread.quit)
@@ -165,25 +153,6 @@ class SyncWindow(QMainWindow):
         self.server.moveToThread(self.syncThread)
         
         self.syncThread.started.connect(self.sync.initQueue)
-        
-        self.server.fileAdded.connect(self.sync.onAdded)
-        self.server.fileChanged.connect(self.sync.onChanged)
-        self.server.fileDeleted.connect(self.sync.onDeleted)
-        
-        self.local.fileAdded.connect(self.sync.onAdded)
-        self.local.fileChanged.connect(self.sync.onChanged)
-        self.local.fileDeleted.connect(self.sync.onDeleted)
-        self.local.fileAdded.connect(self.local.added)
-        self.local.fileChanged.connect(self.local.changed)
-        self.local.fileDeleted.connect(self.local.deleted)
-        
-        self.sync.checkServer.connect(self.server.checkout)
-        self.sync.checkLocal.connect(self.local.checkout)
-        
-        self.sync.deleteServerFile.connect(self.server.onDelete)
-        self.sync.downloadFile.connect(self.server.onDownload)
-        self.sync.uploadFile.connect(self.server.onUpload)
-        
         self.syncThread.start()
         
     @Slot(int, int)
