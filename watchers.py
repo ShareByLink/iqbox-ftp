@@ -362,7 +362,6 @@ class ServerWatcher(Watcher):
             self.download_progress += len(chunk)
             self.downloadProgress.emit(self.download_size, self.download_progress)
         
-        
         if localpath is None:
             localpath = self.localFromServer(filename)
         
@@ -371,10 +370,10 @@ class ServerWatcher(Watcher):
             # Creates the directory if it doesn't already exists.
             os.makedirs(localdir)
         
+        print 'Downloading: %s to %s' % (filename, localpath) 
         with open(localpath, 'wb') as f:
             # Opens the file at `localname` which will hold the downloaded file.
             # Object attributes regarding download status are updated accordingly.
-            print 'Downloading: %s to %s' % (filename, localpath)
             self.fileEvent.emit(filename)
             self.downloading = f
             self.download_progress = 0
