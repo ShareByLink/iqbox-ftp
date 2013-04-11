@@ -190,7 +190,7 @@ class LoginView(View):
         passwd = self.passwdEdit.text()
         ssl = self.sslCheck.isChecked()
         
-        print 'Logging in: %s, %s, %s' % (host, username, passwd)
+        print 'Logging in: %s, %s, %s' % (host, username, '*' * len(passwd))
         
         if len(host) > 0:
             # If the fields are valid, store them using a `QSettings` object
