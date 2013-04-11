@@ -1,7 +1,7 @@
 from PySide.QtCore import QSettings
 
 
-DEBUG = True
+DEBUG = True 
 
 # To be used with the `QSettings` objects
 SettingsKeys = {
@@ -20,3 +20,4 @@ def get_settings():
     """
     
     return QSettings('IQStorage', 'IQBox')
+
