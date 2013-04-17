@@ -24,6 +24,7 @@ class Sync(QObject):
         self.preloaedActions = []
         self.doPreemptive = empty_db()
         self.connected = False
+        self.firstScan = True
         
     def connections(self):
         if not self.connected:
@@ -104,7 +105,12 @@ class Sync(QObject):
         
         self.actionQueue.clear()
         self.server.checkout()
-        self.local.checkout()
+        if self.firstScan:
+            # First do a full scan to check for offline changes.
+            # From there we will rely on real time notifications watchdog.
+            self.firstScan = False
+            self.local.checkout()
+            self.local.startObserver()
         self.cleanSync()
         self.actionTimer.start()
             
@@ -123,6 +129,11 @@ class Sync(QObject):
         changed_file = File.fromPath(serverpath)
         action = None
         
+        if not changed_file.servermdate:
+            # Probably a local added event that also
+            # spawned a modified event.
+            return
+
         print 'Changed here %s, there %s delta %s' % (
                     changed_file.localmdate, changed_file.servermdate,
                     (changed_file.localmdate - changed_file.servermdate).total_seconds())

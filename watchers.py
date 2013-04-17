@@ -7,10 +7,20 @@ from datetime import timedelta as td
 from ftplib import FTP_TLS, FTP, error_reply, error_perm
 
 from PySide.QtCore import QObject, Signal, Slot, QTimer, QDir, QThread
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
 
 from dbcore import File, FileAction, Session
 from localsettings import DEBUG
 
+def ignore_dirs(f):
+    def wrapped(self, event):
+        if event.is_directory:
+            return
+        else:
+            f(self, event)
+
+    return wrapped
 
 def pause_timer(f):
     def wrapped(self):
@@ -564,8 +574,8 @@ class ServerWatcher(Watcher):
         with File.fromPath(serverpath) as deleted:
             deleted.inserver = False
             
-            
-class LocalWatcher(Watcher):
+           
+class LocalWatcher(Watcher, FileSystemEventHandler):
     
     LOCATION = 'local'
     
@@ -574,6 +584,9 @@ class LocalWatcher(Watcher):
         
         self.localdir = localdir
         self.interval = 2000
+        
+        self.observer = Observer()
+        self.observer.schedule(self, localdir, recursive=True)
     
     @pause_timer
     @Slot()
@@ -625,7 +638,45 @@ class LocalWatcher(Watcher):
         super(LocalWatcher, self).deleted(location, serverpath)
         with File.fromPath(serverpath) as deleted:
             deleted.inlocal = False
+    
+    @Slot()
+    def startObserver(self):
+        self.observer.start()
         
+    @ignore_dirs
+    def on_created(self, event):
+        print event
+        serverpath = self.serverFromLocal(event.src_path)
+        with File.fromPath(serverpath) as added_file:
+            # Updating the database.
+            added_file.inlocal = True
+            added_file.localmdate = LocalWatcher.lastModified(event.src_path)
+            print 'added {}'.format(added_file.localmdate)
+        print File.fromPath(serverpath).inlocal
+        print File.fromPath(serverpath).localmdate
+        self.fileAdded.emit(LocalWatcher.LOCATION, serverpath)
+
+    @ignore_dirs
+    def on_deleted(self, event):
+        print event
+        serverpath = self.serverFromLocal(event.src_path)
+        self.fileDeleted.emit(LocalWatcher.LOCATION, serverpath)
+           
+    @ignore_dirs
+    def on_modified(self, event):
+        print event
+        serverpath = self.serverFromLocal(event.src_path)
+        with File.fromPath(serverpath) as changed_file:
+            # Updating the database.
+            changed_file.localmdate = LocalWatcher.lastModified(event.src_path)
+        self.fileChanged.emit(LocalWatcher.LOCATION, serverpath)
+        
+    @ignore_dirs
+    def on_moved(self, event):
+        print event
+        serverpath = self.serverFromLocal(event.src_path) 
+        self.fileAdded.emit(LocalWatcher.LOCATION, serverpath)
+        self.fileDeleted.emit(LocalWatcher.LOCATION, serverpath)
 
 if __name__ == '__main__':
     
