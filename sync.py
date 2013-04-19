@@ -27,9 +27,12 @@ class Sync(QObject):
         self.firstScan = True
         
     def setLocalDir(self, localdir):
-        self.local = LocalWatcher(localdir, self)
+        self.local = LocalWatcher(localdir)
         self.server.setLocalDir(localdir)
 
+        self.local.moveToThread(self.thread())
+        self.local.setParent(self)
+    
     def connections(self):
         if not self.connected:
             self.connected = True
