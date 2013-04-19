@@ -134,7 +134,7 @@ class SyncWindow(QMainWindow):
         
         :param localdir: Absolute local directory path where to keep the files
         """
-
+        self.sync.setLocalDir(localdir)
         self.syncStarted.emit()
 
         
