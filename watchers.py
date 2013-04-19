@@ -8,7 +8,7 @@ from datetime import timedelta as td
 from ftplib import FTP_TLS, FTP, error_reply, error_perm
 
 from PySide.QtCore import QObject, Signal, Slot, QTimer, QDir, QThread
-from watchdog.events import FileSystemEventHandler
+from watchdog.events import FileSystemEventHandler, FileCreatedEvent
 from watchdog.observers import Observer
 
 from dbcore import File, FileAction, Session
@@ -33,6 +33,7 @@ def ignore_dirs(f):
         if event.is_directory:
             return
         else:
+            print event
             f(self, event)
 
     return wrapped
@@ -726,7 +727,6 @@ class LocalWatcher(Watcher, FileSystemEventHandler):
         
     @ignore_dirs
     def on_created(self, event):
-        print event
         serverpath = self.serverFromLocal(event.src_path)
         with File.fromPath(serverpath) as added_file:
             # Updating the database.
@@ -736,13 +736,11 @@ class LocalWatcher(Watcher, FileSystemEventHandler):
 
     @ignore_dirs
     def on_deleted(self, event):
-        print event
         serverpath = self.serverFromLocal(event.src_path)
         self.fileDeleted.emit(LocalWatcher.LOCATION, serverpath)
            
     @ignore_dirs
     def on_modified(self, event):
-        print event
         serverpath = self.serverFromLocal(event.src_path)
         with File.fromPath(serverpath) as changed_file:
             # Updating the database.
@@ -751,10 +749,9 @@ class LocalWatcher(Watcher, FileSystemEventHandler):
         
     @ignore_dirs
     def on_moved(self, event):
-        print event
-        serverpath = self.serverFromLocal(event.src_path) 
-        self.fileAdded.emit(LocalWatcher.LOCATION, serverpath)
-        self.fileDeleted.emit(LocalWatcher.LOCATION, serverpath)
+        serverpath_src = self.serverFromLocal(event.src_path) 
+        self.on_created(FileCreatedEvent(event.dest_path))
+        self.fileDeleted.emit(LocalWatcher.LOCATION, serverpath_src)
 
 if __name__ == '__main__':
     
