@@ -5,6 +5,7 @@ import traceback
 from PySide.QtCore import QObject, Slot, Signal, QTimer, QDir, QThread
 
 from dbcore import File, FileAction, ActionQueue, Session, empty_db
+from watchers import ServerWatcher, LocalWatcher
 
 
 class Sync(QObject):
@@ -15,17 +16,20 @@ class Sync(QObject):
     checkServer = Signal()
     checkLocal = Signal()
     
-    def __init__(self, local, server, parent=None):
+    def __init__(self, host, ssl, parent=None):
         super(Sync, self).__init__(parent)
+
+        self.server = ServerWatcher(host, ssl, self)
         
-        self.local = local
-        self.server = server
-        self.localdir = self.local.localdir
         self.preloaedActions = []
         self.doPreemptive = empty_db()
         self.connected = False
         self.firstScan = True
         
+    def setLocalDir(self, localdir):
+        self.local = LocalWatcher(localdir, self)
+        self.server.setLocalDir(localdir)
+
     def connections(self):
         if not self.connected:
             self.connected = True
@@ -36,9 +40,6 @@ class Sync(QObject):
             self.local.fileAdded.connect(self.onAdded)
             self.local.fileChanged.connect(self.onChanged)
             self.local.fileDeleted.connect(self.onDeleted)
-            self.local.fileAdded.connect(self.local.added)
-            self.local.fileChanged.connect(self.local.changed)
-            self.local.fileDeleted.connect(self.local.deleted)
 
             self.deleteServerFile.connect(self.server.onDelete)
             self.downloadFile.connect(self.server.onDownload)

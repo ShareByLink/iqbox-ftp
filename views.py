@@ -183,7 +183,6 @@ class LoginView(View):
         """
         Slot. Called on the user clicks on the `loginButton` button
         """
-        
         # Takes out the user input from the fields
         host = self.hostEdit.text()
         username = self.usernameEdit.text()

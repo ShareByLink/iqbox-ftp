@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import traceback
+import StringIO
 from datetime import datetime as dt
 from datetime import timedelta as td
 from ftplib import FTP_TLS, FTP, error_reply, error_perm
@@ -12,6 +13,20 @@ from watchdog.observers import Observer
 
 from dbcore import File, FileAction, Session
 from localsettings import DEBUG
+
+def upload_test(f):
+    def wrapped(self):
+        mockFile = StringIO.StringIO('Test')
+
+        try: 
+            self.ftp.storbinary('STOR %s' % self.testFile, mockFile)
+            testResult = f(self)
+            self.ftp.delete('iqbox.test')
+            return testResult
+        except (error_perm, error_reply):
+            return False
+
+    return wrapped
 
 def ignore_dirs(f):
     def wrapped(self, event):
@@ -55,7 +70,11 @@ class Watcher(QObject):
     
     def __init__(self, parent=None):
         super(Watcher, self).__init__(parent)
-        
+       
+        self.fileAdded.connect(self.added)
+        self.fileChanged.connect(self.changed)
+        self.fileDeleted.connect(self.deleted)
+       
     @Slot()
     def checkout(self):
         raise NotImplementedError
@@ -101,8 +120,10 @@ class ServerWatcher(Watcher):
     uploadProgress = Signal((int, int,))
     fileEvent = Signal((str,))
     fileEventComplete = Signal()    
+    loginCompleted = Signal((bool, str,))
     
     LOCATION = 'server'
+    TEST_FILE = 'iqbox.test'
     
     def __init__(self, host, ssl, parent=None):
         """
@@ -125,7 +146,8 @@ class ServerWatcher(Watcher):
         
         self.preemptiveCheck = False
         self.preemptiveActions = []
-
+        self.testFile = 'iqbox.test'
+        
     @property
     def currentdir(self):
         """Returns the current working directory at the server"""
@@ -244,6 +266,40 @@ class ServerWatcher(Watcher):
         # Wraps up the checkout process, commits to the database.
         session.commit()
                 
+    @Slot()
+    def onLogin(self, username, passwd):
+        ok = True
+        msg = '' 
+        error_msg = "Log in failed.\nPlease check your credentials and SSL settings."
+        try:
+            loginResponse = self.ftp.login(username, passwd)
+        except:
+            info = traceback.format_exception(*sys.exc_info())
+            for i in info: sys.stderr.write(i)
+            ok = False
+            msg = error_msg 
+        else:
+            if '230' in loginResponse:
+                ok = True
+            else:
+                ok = False
+                msg = error_msg
+        
+        if ok:
+            # Logged in. Now let's do compability tests.
+            if not self.testPermissions():
+                # User doesn't have write permissions, don't bother doing next test.
+                ok = False
+                msg = 'It seems like you do not have write access to this server.' 
+            else:
+                # Permissions test passed, now let's test MDTM for timestamp modification.
+                if not self.testMDTM():
+                    ok = False
+                    msg = 'This server does not support timestamp modification\n \
+                           need by this application.'
+
+        self.loginCompleted.emit(ok, msg)
+        
     def getFiles(self, path):
         """
         This method simply wraps the `nlst` method with an exception handler,
@@ -302,6 +358,31 @@ class ServerWatcher(Watcher):
             for i in info: sys.stderr.write(i)
             return []
     
+    @upload_test
+    def testPermissions(self):
+        # For interface purposes. upload_test takes care of everything.
+        return True
+
+    @upload_test
+    def testMDTM(self):
+        # Absurd date to test whether the change really happened.
+        time = dt.utcfromtimestamp(0)
+        try:
+            self.ftp.sendcmd('MDTM %s %s' % (time.strftime('%Y%m%d%H%M%S'), self.testFile))
+            otherTime = self.lastModified(self.testFile)
+            diff = (time - otherTime).total_seconds()
+            if abs(diff) < 2:
+                # Let's give it a 2 seconds tolerance.
+                mdtm = True
+            else:
+                mdtm = False
+        except (ValueError, error_reply, error_perm):
+            info = traceback.format_exception(*sys.exc_info())
+            for i in info: sys.stderr.write(i)
+            mdtm = False
+        
+        return mdtm
+
     @Slot(str)
     def onDelete(self, filename):
         self.deleteQueue.append(filename)
@@ -651,9 +732,6 @@ class LocalWatcher(Watcher, FileSystemEventHandler):
             # Updating the database.
             added_file.inlocal = True
             added_file.localmdate = LocalWatcher.lastModified(event.src_path)
-            print 'added {}'.format(added_file.localmdate)
-        print File.fromPath(serverpath).inlocal
-        print File.fromPath(serverpath).localmdate
         self.fileAdded.emit(LocalWatcher.LOCATION, serverpath)
 
     @ignore_dirs
@@ -680,14 +758,11 @@ class LocalWatcher(Watcher, FileSystemEventHandler):
 
 if __name__ == '__main__':
     
-    localApp = LocalWatcher('C:\\Windows\\win32')
-    localpath = localApp.localFromServer('/home/text.cc')
-    serverpath = localApp.serverFromLocal(localpath)
-    
-    print serverpath, localpath
-    
     app3 = ServerWatcher('ops.osop.com.pa', False)
     app3.setLocalDir('/home/sergio/Documents/FTPSync/mareas')
+    print app3.onLogin('mareas', 'mareas123')
+
+    raise SystemExit('End of test')
     print app3.ftp.login('mareas', 'mareas123')
     time = app3.lastModified('/test.txt')
     print 'Mareas UTC: %s, Local: %s' % (time, time - datetime.timedelta(hours=5))
