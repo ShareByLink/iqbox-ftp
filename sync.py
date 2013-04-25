@@ -109,12 +109,13 @@ class Sync(QObject):
                             deleted_file.inserver = False
         
         self.actionQueue.clear()
-        self.statusChanged.emit('Scanning remote for changes')
+        self.statusChanged.emit('Scanning remote files for changes')
         self.server.checkout()
         if self.firstScan:
             # First do a full scan to check for offline changes.
             # From there we will rely on real time notifications watchdog.
             self.firstScan = False
+            self.statusChanged.emit('Scanning local files for changes')
             self.local.checkout()
             self.local.startObserver()
         self.cleanSync()
