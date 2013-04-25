@@ -2,7 +2,7 @@ import platform
 
 from PySide.QtGui import (
       QWidget, QPixmap, QLabel, QFont, QFrame, QPushButton, QPainter, QBrush,
-      QColor, QLineEdit, QHBoxLayout, QVBoxLayout, QCheckBox, QFileDialog)
+      QProgressBar, QColor, QLineEdit, QHBoxLayout, QVBoxLayout, QCheckBox, QFileDialog)
 from PySide.QtCore import Signal, Slot, QDir, Qt
 
 from localsettings import get_settings, SettingsKeys
@@ -331,12 +331,27 @@ class StatusArea(QWidget):
         self.setStyleSheet('StatusArea {background: yellow}')
         self.msg = QLabel(self)
         self.file = QLabel(self)
-        self.progress = QLabel(self)
+        self.progress = QProgressBar(self)
    
         self.msg.setFont(View.labelsFont())
         self.file.setFont(View.editsFont())
-        self.progress.setFont(View.labelsFont())
 
+        self.progress.setMaximum(100)
+        self.progress.setMinimum(0)
+        self.progress.setTextVisible(False)
+        self.progress.setStyleSheet(""" 
+            QProgressBar {
+                 border: 2px solid grey;
+                 border-radius: 5px;
+                 width: 60px;
+                 height: 10px;
+             }
+
+             QProgressBar::chunk {
+                 background-color: #05B8CC;
+                 width: 5px;
+             }""")
+ 
         layout = QHBoxLayout()
         layout.addWidget(self.msg, 0, Qt.AlignLeft)
         layout.addWidget(self.file, 0, Qt.AlignLeft)
@@ -347,10 +362,15 @@ class StatusArea(QWidget):
     @Slot(str)
     @Slot(str, str, str)
     def setMessage(self, msg, file='', progress=None):
-        progress = '{}%'.format(progress) if progress else '' 
+        if not progress:
+            self.progress.hide()
+            self.progress.setValue(0)
+        else:
+            self.progress.setValue(progress)
+            self.progress.show()
+
         self.msg.setText(msg)
         self.file.setText(file)
-        self.progress.setText(progress)
 
     def paintEvent(self, event):
         p = QPainter()
