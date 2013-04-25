@@ -15,6 +15,7 @@ from watchdog.observers import Observer
 from dbcore import File, FileAction, Session
 from localsettings import DEBUG
 
+
 def upload_test(f):
     def wrapped(self):
         mockFile = StringIO.StringIO('Test')
@@ -237,7 +238,7 @@ class ServerWatcher(Watcher):
             dir_ready = True
             for dir_ in dir_subdirs:
                 # `dirpath` is the absolute path of the subdirectory on the server,
-                dirpath = os.path.join(downloading_dir, dir_)
+                dirpath = QDir.fromNativeSeparators(os.path.join(downloading_dir, dir_))
                 # `downloading_dir` is ready only when all its subdirectory are on the 
                 # `checked_dirs` list.
                 if dirpath not in checked_dirs:
@@ -273,7 +274,7 @@ class ServerWatcher(Watcher):
     def onLogin(self, username, passwd):
         ok = True
         msg = ''
-
+        error_msg = 'Login failed.'
         try:
             if not self.ftp:
                 self.ftp = FTP_TLS(self.host) if self.useSSL is True else FTP(self.host)
@@ -301,8 +302,8 @@ class ServerWatcher(Watcher):
                 ok = False
                 msg = 'It seems like you do not have write access to this server.' 
             else:
-                # Permissions test passed, now let's test MDTM for timestamp modification.
-                if not self.testMDTM():
+                # Permissions test passed, now let's test MFMT for timestamp modification.
+                if not self.testMFMT():
                     ok = False
                     msg = 'This server does not support timestamp modification\n \
                            need by this application.'
@@ -373,11 +374,11 @@ class ServerWatcher(Watcher):
         return True
 
     @upload_test
-    def testMDTM(self):
+    def testMFMT(self):
         # Absurd date to test whether the change really happened.
-        time = dt.utcfromtimestamp(0)
+        time = dt.utcfromtimestamp(100000000)
         try:
-            self.ftp.sendcmd('MDTM %s %s' % (time.strftime('%Y%m%d%H%M%S'), self.testFile))
+            self.setLastModified(self.testFile, time)
             otherTime = self.lastModified(self.testFile)
             diff = (time - otherTime).total_seconds()
             if abs(diff) < 2:
@@ -491,7 +492,7 @@ class ServerWatcher(Watcher):
                     downloadedfile.localmdate = mdate
                     downloadedfile.servermdate = mdate
                     
-                self.ftp.sendcmd('MDTM %s %s' % (mdate.strftime('%Y%m%d%H%M%S'), filename))
+                self.setLastModified(filename, mdate)
 
                 downloaded = True
             except (error_reply, error_perm) as ftperr:
@@ -554,7 +555,7 @@ class ServerWatcher(Watcher):
                 modified = uploaded.localmdate
                 uploaded.servermdate = modified
                 
-                self.ftp.sendcmd('MDTM %s %s' % (modified.strftime('%Y%m%d%H%M%S'), filename))
+                self.setLastModified(filename, modified)
             
             uploaded = True
         except (error_reply, error_perm, OSError) as err:
@@ -580,6 +581,16 @@ class ServerWatcher(Watcher):
         dateformat = '%Y%m%d%H%M%S.%f' if '.' in timestamp else '%Y%m%d%H%M%S'
         
         return dt.strptime(timestamp, dateformat)
+
+    def setLastModified(self, serverpath, newtime):
+        """
+        Users the MFMT FTP command to set `newtime` as the modified timestamp of the
+        file `serverpath` on the server. 
+
+        :param serverpath: Relative or absolute path to the file
+        :param newtime: datedatime object holding the required time
+        """
+        self.ftp.sendcmd('MFMT %s %s' % (newtime.strftime('%Y%m%d%H%M%S'), serverpath))
     
     def mkpath(self, path):
         """
