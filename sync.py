@@ -15,7 +15,8 @@ class Sync(QObject):
     uploadFile = Signal((str,))
     checkServer = Signal()
     checkLocal = Signal()
-    
+    statusChanged = Signal((str,))
+
     def __init__(self, host, ssl, parent=None):
         super(Sync, self).__init__(parent)
 
@@ -108,6 +109,7 @@ class Sync(QObject):
                             deleted_file.inserver = False
         
         self.actionQueue.clear()
+        self.statusChanged.emit('Scanning remote for changes')
         self.server.checkout()
         if self.firstScan:
             # First do a full scan to check for offline changes.
@@ -127,6 +129,7 @@ class Sync(QObject):
         session = Session()
         session.query(File).filter(File.inserver == False).filter(File.inlocal == False).delete()
         session.commit()
+        self.statusChanged.emit('Sync completed. Waiting for changes')
 
     @Slot(str, str)
     def onChanged(self, location, serverpath):

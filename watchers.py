@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import socket
 import traceback
 import StringIO
 from datetime import datetime as dt
@@ -120,7 +121,7 @@ class ServerWatcher(Watcher):
     downloadProgress = Signal((int, int,))
     uploadProgress = Signal((int, int,))
     fileEvent = Signal((str,))
-    fileEventComplete = Signal()    
+    fileEventCompleted = Signal()    
     loginCompleted = Signal((bool, str,))
     
     LOCATION = 'server'
@@ -143,8 +144,9 @@ class ServerWatcher(Watcher):
         self.deleteQueue = []
         self.downloadQueue = []
         self.uploadQueue = []
-        self.ftp = FTP_TLS(host) if ssl is True else FTP(host)
-        
+        self.ftp = None 
+        self.useSSL = ssl
+        self.host = host
         self.preemptiveCheck = False
         self.preemptiveActions = []
         self.testFile = 'iqbox.test'
@@ -270,11 +272,17 @@ class ServerWatcher(Watcher):
     @Slot()
     def onLogin(self, username, passwd):
         ok = True
-        msg = '' 
-        error_msg = "Log in failed.\nPlease check your credentials and SSL settings."
+        msg = ''
+
         try:
+            if not self.ftp:
+                self.ftp = FTP_TLS(self.host) if self.useSSL is True else FTP(self.host)
             loginResponse = self.ftp.login(username, passwd)
-        except:
+        except socket.gaierror:
+            self.ftp = None
+            ok = False
+            msg = 'Server address could not be found.' 
+        except (error_perm, error_reply):
             info = traceback.format_exception(*sys.exc_info())
             for i in info: sys.stderr.write(i)
             ok = False
@@ -490,7 +498,7 @@ class ServerWatcher(Watcher):
                 print 'Error downloading %s, %s' % (filename, ftperr)
                 downloaded = False
                 
-            self.fileEventComplete.emit()
+            self.fileEventCompleted.emit()
             
             return downloaded
     
@@ -553,7 +561,7 @@ class ServerWatcher(Watcher):
             print 'Error uploading %s, %s' % (filename, err)
             uploaded = False
             
-        self.fileEventComplete.emit()
+        self.fileEventCompleted.emit()
         
         return uploaded
             

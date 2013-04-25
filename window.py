@@ -28,6 +28,7 @@ class SyncWindow(QMainWindow):
     failedLogIn = Signal()
     syncStarted = Signal()
     loginRequested = Signal((str, str,))
+    statusChanged = Signal((str, str, int,))
     
     def __init__(self, parent=None):
         super(SyncWindow, self).__init__(parent)
@@ -71,7 +72,8 @@ class SyncWindow(QMainWindow):
         self.setCentralWidget(syncview)
         self.setFixedSize(syncview.size())
         self.statusBar().show()
-        
+       
+        self.statusChanged.connect(syncview.status.setMessage)
         syncview.sync.connect(self.onSync)
         
     def getSync(self, host, ssl):
@@ -99,8 +101,9 @@ class SyncWindow(QMainWindow):
         self.sync.server.downloadProgress.connect(self.onDownloadProgress)
         self.sync.server.uploadProgress.connect(self.onUploadProgress)
         self.sync.server.fileEvent.connect(self.onFileEvent)
-        self.sync.server.fileEventComplete.connect(self.clearMessage)
+        self.sync.server.fileEventCompleted.connect(self.clearMessage)
         self.sync.server.loginCompleted.connect(self.onLoginCompleted)
+        self.sync.statusChanged.connect(self.setStatus)
         self.loginRequested.connect(self.sync.server.onLogin) 
 
         self.syncThread = QThread()
@@ -151,8 +154,12 @@ class SyncWindow(QMainWindow):
             return
         else:
             percent = (progress * 100) / total
-            self.statusBar().showMessage('%s %s %d%%' % (action, self.currentFile, percent))
+            self.statusChanged.emit(action, self.currentFile, percent)
         
+    @Slot(str)
+    def setStatus(self, msg):
+        self.statusChanged.emit(msg, '', 0)
+
     @Slot(int, int)
     def onDownloadProgress(self, total, progress):
         """

@@ -1,8 +1,8 @@
 import platform
 
 from PySide.QtGui import (
-      QWidget, QPixmap, QLabel, QFont, QFrame, QPushButton, 
-      QLineEdit, QHBoxLayout, QVBoxLayout, QCheckBox, QFileDialog)
+      QWidget, QPixmap, QLabel, QFont, QFrame, QPushButton, QPainter, QBrush,
+      QColor, QLineEdit, QHBoxLayout, QVBoxLayout, QCheckBox, QFileDialog)
 from PySide.QtCore import Signal, Slot, QDir, Qt
 
 from localsettings import get_settings, SettingsKeys
@@ -230,6 +230,8 @@ class SyncView(View):
         self.createLayouts()
         self.setFixedSize(580, 325)
 
+        self.status.setMessage('Ready')
+
     def createLayouts(self):
         """Put widgets into layouts, thus creating the widget"""
         
@@ -247,12 +249,15 @@ class SyncView(View):
         pathLayout.addWidget(self.localdirEdit)
         pathLayout.addWidget(self.browseButton)
         fieldsLayout.addLayout(pathLayout)
-        
+
         buttonLayout.addStretch(50)
         buttonLayout.addWidget(self.syncButton, 50, Qt.AlignRight)
         
         fieldsLayout.addLayout(buttonLayout)
-        fieldsLayout.addStretch(100)
+        fieldsLayout.addStretch(10)
+        fieldsLayout.addWidget(self.statusLabel)
+        fieldsLayout.addWidget(self.status)
+        fieldsLayout.addStretch(80)
 
         mainLayout.addLayout(fieldsLayout, 60)
         mainLayout.addStretch(10)
@@ -281,7 +286,7 @@ class SyncView(View):
         self.browseButton.setFont(labelsFont)
         
         self.syncButton = QPushButton(self)
-        self.syncButton.setText('Sync')
+        self.syncButton.setText('Sync') 
         self.syncButton.setFont(labelsFont)
         
         self.browseButton.clicked.connect(self.onBrowseClicked)
@@ -290,6 +295,11 @@ class SyncView(View):
         settings = get_settings()
         self.localdirEdit.setText(settings.value(SettingsKeys['localdir'], ''))
         
+        self.statusLabel = QLabel(self)
+        self.statusLabel.setText('Status')
+        self.statusLabel.setFont(View.labelsFont())
+        self.status = StatusArea(self)
+
     @Slot()
     def onBrowseClicked(self):
         """Slot. Called when the user clicks on the `browseButton` button"""
@@ -314,3 +324,36 @@ class SyncView(View):
             self.syncButton.setEnabled(False)
             self.sync.emit(localdir)
 
+
+class StatusArea(QWidget):
+    def __init__(self, parent=None):
+        super(StatusArea, self).__init__(parent)
+        self.setStyleSheet('StatusArea {background: yellow}')
+        self.msg = QLabel(self)
+        self.file = QLabel(self)
+        self.progress = QLabel(self)
+   
+        self.msg.setFont(View.labelsFont())
+        self.file.setFont(View.editsFont())
+        self.progress.setFont(View.labelsFont())
+
+        layout = QHBoxLayout()
+        layout.addWidget(self.msg, 0, Qt.AlignLeft)
+        layout.addWidget(self.file, 0, Qt.AlignLeft)
+        layout.addWidget(self.progress, 0, Qt.AlignRight)
+
+        self.setLayout(layout)
+
+    @Slot(str)
+    @Slot(str, str, str)
+    def setMessage(self, msg, file='', progress=None):
+        progress = '{}%'.format(progress) if progress else '' 
+        self.msg.setText(msg)
+        self.file.setText(file)
+        self.progress.setText(progress)
+
+    def paintEvent(self, event):
+        p = QPainter()
+        p.begin(self)
+        p.fillRect(self.rect(), QBrush(QColor(240, 200, 0)))
+        p.end()
