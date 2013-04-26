@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import socket
+import platform
 import traceback
 import StringIO
 from datetime import datetime as dt
@@ -124,7 +125,8 @@ class ServerWatcher(Watcher):
     fileEvent = Signal((str,))
     fileEventCompleted = Signal()    
     loginCompleted = Signal((bool, str,))
-    
+    badFilenameFound = Signal((str,))
+
     LOCATION = 'server'
     TEST_FILE = 'iqbox.test'
     
@@ -145,6 +147,7 @@ class ServerWatcher(Watcher):
         self.deleteQueue = []
         self.downloadQueue = []
         self.uploadQueue = []
+        self.warnedNames = []
         self.ftp = None 
         self.useSSL = ssl
         self.host = host
@@ -215,6 +218,19 @@ class ServerWatcher(Watcher):
                 serverpath = QDir.fromNativeSeparators(serverpath)
                 server_file = File.fromPath(serverpath)
                 if server_file.last_checked_server != check_date:
+                    if platform.system() == 'Windows':
+                        filename = os.path.basename(serverpath)
+                        badName = False
+                        for chr in ['\\', '/', ':', '?', '"', '<', '>', '|']:
+                            if chr in filename:
+                                badName = True
+                                break
+                        if badName:
+                            if filename not in self.warnedNames:
+                                self.warnedNames.append(filename)
+                                self.badFilenameFound.emit(filename)
+                            continue
+
                     # Do this process only once per file        
                     just_added = not server_file.inserver
                     lastmdate = server_file.servermdate
@@ -584,13 +600,25 @@ class ServerWatcher(Watcher):
 
     def setLastModified(self, serverpath, newtime):
         """
-        Users the MFMT FTP command to set `newtime` as the modified timestamp of the
+        Uses the MFMT or MDTM FTP commands to set `newtime` as the modified timestamp of the
         file `serverpath` on the server. 
 
         :param serverpath: Relative or absolute path to the file
         :param newtime: datedatime object holding the required time
         """
-        self.ftp.sendcmd('MFMT %s %s' % (newtime.strftime('%Y%m%d%H%M%S'), serverpath))
+        cmds = ['MFMT', 'MDTM']
+        for cmd in cmds:
+            try:
+                self.ftp.sendcmd(
+                        '%s %s %s' % (cmd, newtime.strftime('%Y%m%d%H%M%S'), serverpath))
+                return
+            except (error_perm, error_reply) as e:
+                if cmd == cmds[len(cmds) - 1]:
+                    # If is the last comand, re-raise the exception, else
+                    # keep trying.
+                    raise e
+                else:
+                    continue
     
     def mkpath(self, path):
         """
