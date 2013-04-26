@@ -1,7 +1,7 @@
 from PySide.QtCore import QSettings
 
 
-DEBUG = True 
+DEBUG = True
 
 # To be used with the `QSettings` objects
 SettingsKeys = {

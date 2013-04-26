@@ -501,8 +501,7 @@ class ServerWatcher(Watcher):
                 
                 print 'Download finished'
                 
-                # Let's set the same modified time on the server to match
-                # the one in local.          
+                # Let's set the same modified time to that on the server.
                 with File.fromPath(filename) as downloadedfile:
                     mdate = LocalWatcher.lastModified(localpath)
                     downloadedfile.localmdate = mdate
@@ -593,10 +592,19 @@ class ServerWatcher(Watcher):
         """
         
         timestamp = self.ftp.sendcmd('MDTM %s' % filename)
+        if '213 ' not in timestamp:
+            # Second chance was found to be needed in some cases.
+            timestamp = self.ftp.sendcmd('MDTM %s' % filename)
+
         timestamp = timestamp.split(' ')[-1]
         dateformat = '%Y%m%d%H%M%S.%f' if '.' in timestamp else '%Y%m%d%H%M%S'
         
-        return dt.strptime(timestamp, dateformat)
+        try:
+            mtime = dt.strptime(timestamp, dateformat)
+        except ValueError:
+            mtime = dt.utcnow()
+
+        return mtime
 
     def setLastModified(self, serverpath, newtime):
         """
