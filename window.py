@@ -76,15 +76,6 @@ class SyncWindow(QMainWindow):
         self.statusChanged.connect(syncview.status.setMessage)
         syncview.sync.connect(self.onSync)
         
-    def getSync(self, host, ssl):
-        """
-        Creates a `Sync` object to be used by the application.
-        
-        :param host: Indicates the hostname of the FTP server
-        :param ssl: Indicates whether the FTP needs SSL support
-        """
-        
-         
     @Slot(str, str, str, bool)
     def onLogin(self, host, username, passwd, ssl):
         """
@@ -101,7 +92,7 @@ class SyncWindow(QMainWindow):
         self.sync.server.downloadProgress.connect(self.onDownloadProgress)
         self.sync.server.uploadProgress.connect(self.onUploadProgress)
         self.sync.server.fileEvent.connect(self.onFileEvent)
-        self.sync.server.fileEventCompleted.connect(self.clearMessage)
+        self.sync.server.badFilenameFound.connect(self.badNameWarning)
         self.sync.server.loginCompleted.connect(self.onLoginCompleted)
         self.sync.statusChanged.connect(self.setStatus)
         self.loginRequested.connect(self.sync.server.onLogin) 
@@ -116,15 +107,7 @@ class SyncWindow(QMainWindow):
     @Slot(bool, str)
     def onLoginCompleted(self, ok, msg):
         if not ok:
-            warning = QMessageBox(self)
-            warning.setFont(View.labelsFont())
-            warning.setStyleSheet('QMessageBox {background: white}')
-            warning.setWindowTitle("Error")
-            warning.setText(msg)
-            warning.setIcon(QMessageBox.Warning)
-            warning.addButton("Ok", QMessageBox.AcceptRole).setFont(View.editsFont())
-            warning.exec_()
-            
+            self.showMessageBox(msg)
             self.failedLogIn.emit()
 
         else:
@@ -139,7 +122,17 @@ class SyncWindow(QMainWindow):
         """
         self.sync.setLocalDir(localdir)
         self.syncStarted.emit()
-
+    
+    def showMessageBox(self, msg):
+        warning = QMessageBox(self)
+        warning.setFont(View.labelsFont())
+        warning.setStyleSheet('QMessageBox {background: white}')
+        warning.setWindowTitle("Error")
+        warning.setText(msg)
+        warning.setIcon(QMessageBox.Warning)
+        warning.addButton("Ok", QMessageBox.AcceptRole).setFont(View.editsFont())
+        warning.exec_()
+            
         
     @Slot(int, int)
     def onProgress(self, action, total, progress):
@@ -191,8 +184,10 @@ class SyncWindow(QMainWindow):
         """
         
         self.currentFile = filename
-          
-    @Slot()
-    def clearMessage(self):
-        self.statusBar().showMessage('')
+       
+    @Slot(str)
+    def badNameWarning(self, filename):
+        self.showMessageBox(
+                'Will not sync "{}". Invalid filename'.format(filename))
+
 
