@@ -94,6 +94,8 @@ class SyncWindow(QMainWindow):
         self.sync.server.fileEvent.connect(self.onFileEvent)
         self.sync.server.badFilenameFound.connect(self.badNameWarning)
         self.sync.server.loginCompleted.connect(self.onLoginCompleted)
+        self.sync.server.fileEventCompleted.connect(self.onFileEventCompleted)
+        self.sync.server.ioError.connect(self.onIOError)
         self.sync.statusChanged.connect(self.setStatus)
         self.loginRequested.connect(self.sync.server.onLogin) 
 
@@ -113,6 +115,10 @@ class SyncWindow(QMainWindow):
         else:
             self.syncView()
                 
+    @Slot()
+    def onFileEventCompleted(self):
+        self.statusChanged.emit('Completed', self.currentFile, 100)
+
     @Slot(str)
     def onSync(self, localdir):
         """
@@ -121,7 +127,9 @@ class SyncWindow(QMainWindow):
         :param localdir: Absolute local directory path where to keep the files
         """
         self.sync.setLocalDir(localdir)
+        self.sync.local.ioError.connect(self.onIOError)
         self.syncStarted.emit()
+        self.setStatus('Syncing')
     
     def showMessageBox(self, msg):
         warning = QMessageBox(self)
@@ -185,6 +193,10 @@ class SyncWindow(QMainWindow):
         
         self.currentFile = filename
        
+    @Slot(str)
+    def onIOError(self, filename):
+        self.showMessageBox('Error reading: "{}"'.format(filename))
+
     @Slot(str)
     def badNameWarning(self, filename):
         self.showMessageBox(

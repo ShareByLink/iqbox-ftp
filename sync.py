@@ -11,6 +11,7 @@ from watchers import ServerWatcher, LocalWatcher
 class Sync(QObject):
     
     deleteServerFile = Signal((str,))
+    deleteLocalFile = Signal((str,))
     downloadFile = Signal((str,))
     uploadFile = Signal((str,))
     checkServer = Signal()
@@ -28,6 +29,9 @@ class Sync(QObject):
         self.firstScan = True
         
     def setLocalDir(self, localdir):
+        if not os.path.exists(localdir):
+            # Creates the directory if it doesn't already exists.
+            os.makedirs(localdir)
         self.local = LocalWatcher(localdir)
         self.server.setLocalDir(localdir)
 
@@ -45,6 +49,7 @@ class Sync(QObject):
             self.local.fileChanged.connect(self.onChanged)
             self.local.fileDeleted.connect(self.onDeleted)
 
+            self.deleteLocalFile.connect(self.local.deleteFile)
             self.deleteServerFile.connect(self.server.onDelete)
             self.downloadFile.connect(self.server.onDownload)
             self.uploadFile.connect(self.server.onUpload)
@@ -97,13 +102,9 @@ class Sync(QObject):
                         # whether to delete a file on the server or local.
                         if location == FileAction.LOCAL:
                             localpath = self.local.localFromServer(path)
-                            
-                            try:
-                                os.remove(localpath)
-                            except:
-                                pass
-                            
+                            self.deleteLocalFile.emit(localpath)
                             deleted_file.inlocal = False
+
                         elif location == FileAction.SERVER:
                             self.deleteServerFile.emit(path)
                             deleted_file.inserver = False

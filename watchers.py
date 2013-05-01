@@ -69,6 +69,7 @@ class Watcher(QObject):
     fileAdded = Signal((str,str,))
     fileChanged = Signal((str,str,))
     checked = Signal()
+    ioError = Signal((str,))
     
     TOLERANCE = 5
     
@@ -439,6 +440,8 @@ class ServerWatcher(Watcher):
         except (error_reply, error_perm):
             print 'Error deleting %s' % filename
             return False
+
+        self.fileEventCompleted.emit()
         
     @Slot(str)
     def onDownload(self, filename):
@@ -488,14 +491,14 @@ class ServerWatcher(Watcher):
             os.makedirs(localdir)
         
         print 'Downloading: %s to %s' % (filename, localpath) 
-        with open(localpath, 'wb') as f:
-            # Opens the file at `localname` which will hold the downloaded file.
-            # Object attributes regarding download status are updated accordingly.
-            self.fileEvent.emit(filename)
-            self.downloading = f
-            self.download_progress = 0
+        try:
+            with open(localpath, 'wb') as f:
+                # Opens the file at `localname` which will hold the downloaded file.
+                # Object attributes regarding download status are updated accordingly.
+                self.fileEvent.emit(filename)
+                self.downloading = f
+                self.download_progress = 0
 
-            try:
                 self.download_size = int(self.ftp.sendcmd('SIZE %s' % filename).split(' ')[-1])
                 self.ftp.retrbinary('RETR %s' % filename, handleChunk)
                 
@@ -510,13 +513,16 @@ class ServerWatcher(Watcher):
                 self.setLastModified(filename, mdate)
 
                 downloaded = True
-            except (error_reply, error_perm) as ftperr:
-                print 'Error downloading %s, %s' % (filename, ftperr)
-                downloaded = False
+        except (IOError, OSError):
+            downloaded = False
+            self.ioError.emit(localpath)
+        except (error_reply, error_perm) as ftperr:
+            print 'Error downloading %s, %s' % (filename, ftperr)
+            downloaded = False
                 
-            self.fileEventCompleted.emit()
-            
-            return downloaded
+        self.fileEventCompleted.emit()
+        
+        return downloaded
     
     @Slot(str)
     def onUpload(self, filename):
@@ -573,6 +579,10 @@ class ServerWatcher(Watcher):
                 self.setLastModified(filename, modified)
             
             uploaded = True
+
+        except (IOError, OSError):
+            uploaded = False
+            self.ioError.emit(localpath)
         except (error_reply, error_perm, OSError) as err:
             print 'Error uploading %s, %s' % (filename, err)
             uploaded = False
@@ -769,6 +779,13 @@ class LocalWatcher(Watcher, FileSystemEventHandler):
     @classmethod
     def lastModified(cls, localpath):
         return dt.utcfromtimestamp(os.path.getmtime(localpath))
+
+    @Slot(str)
+    def deleteFile(self, localpath):
+        try:
+            os.remove(localpath)
+        except (IOError, OSError):
+            self.ioError.emit(localpath) 
         
     @Slot(str, str)
     def deleted(self, location, serverpath):
@@ -807,6 +824,7 @@ class LocalWatcher(Watcher, FileSystemEventHandler):
         serverpath_src = self.serverFromLocal(event.src_path) 
         self.on_created(FileCreatedEvent(event.dest_path))
         self.fileDeleted.emit(LocalWatcher.LOCATION, serverpath_src)
+
 
 if __name__ == '__main__':
     
