@@ -63,11 +63,15 @@ class View(QWidget):
         self.iconLabel.setPixmap(logoPixmap)
         self.iconLabel.setGeometry(20, 20, logoPixmap.width(), logoPixmap.height())
         
+        self.linkLabel = QLabel(self)
+        self.linkLabel.setText(
+                """<font size="1"><a href="http://www.iqstorage.com/fromiqbox.php">
+                Developed at IQ Storage FTP Hosing Services</a></font>""")
+        self.linkLabel.setOpenExternalLinks(True)
         # Defines a visual line separator to be placed under the `logoPixmap` `QLabel`
         self.line = QFrame()
         self.line.setFrameShape(QFrame.HLine);
         self.line.setFrameShadow(QFrame.Sunken);
-
 
 class LoginView(View):
     """`View` derived class. Defines the log in widget"""
@@ -85,7 +89,7 @@ class LoginView(View):
         
         self.createWidgets()
         self.createLayouts()
-        self.setFixedSize(250, 325)
+        self.setFixedSize(250, 340)
         
     def createLayouts(self):
         """Put widgets into layouts, thus creating the widget"""
@@ -98,6 +102,7 @@ class LoginView(View):
         mainLayout.addStretch(20)
         
         fieldsLayout.addStretch(80)
+        fieldsLayout.addWidget(self.linkLabel)
         fieldsLayout.addWidget(self.line)
         fieldsLayout.addStretch(20)
         
@@ -228,7 +233,7 @@ class SyncView(View):
         
         self.createWidgets()
         self.createLayouts()
-        self.setFixedSize(580, 325)
+        self.setFixedSize(580, 340)
 
         self.status.setMessage('Ready')
 
@@ -243,6 +248,7 @@ class SyncView(View):
         mainLayout.addStretch(10)
         
         fieldsLayout.addStretch(50)
+        fieldsLayout.addWidget(self.linkLabel)
         fieldsLayout.addWidget(self.line)
         
         fieldsLayout.addWidget(self.localdirLabel) 
