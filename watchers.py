@@ -71,7 +71,7 @@ class Watcher(QObject):
     checked = Signal()
     ioError = Signal((str,))
     
-    TOLERANCE = 5
+    TOLERANCE = 15
     
     def __init__(self, parent=None):
         super(Watcher, self).__init__(parent)

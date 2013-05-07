@@ -129,7 +129,7 @@ class Sync(QObject):
         """
         
         session = Session()
-        session.query(File).filter(File.inserver == False).filter(File.inlocal == False).delete()
+        session.query(File).filter(File.inserver == False).filter(File.inlocal == False).delete(synchronize_session=False)
         session.commit()
         self.statusChanged.emit('Sync completed. Waiting for changes')
 
@@ -143,6 +143,7 @@ class Sync(QObject):
             # spawned a modified event.
             return
 
+        print 'File ' + serverpath + ':'
         print 'Changed here %s, there %s delta %s' % (
                     changed_file.localmdate, changed_file.servermdate,
                     (changed_file.localmdate - changed_file.servermdate).total_seconds())
@@ -150,7 +151,7 @@ class Sync(QObject):
         try:
             diff = changed_file.timeDiff()
             
-            if abs(diff) < 5:
+            if abs(diff) < Watcher.TOLERANCE:
                 return
             
             if location == FileAction.SERVER:
