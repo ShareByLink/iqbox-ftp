@@ -4,6 +4,8 @@ import traceback
 
 import engine_tools
 
+from filetransfer_abc import ftp_si
+
 from PySide.QtCore import QObject, Slot, Signal, QTimer, QDir, QThread
 
 from dbcore import File, FileAction, ActionQueue, Session, empty_db
@@ -96,6 +98,14 @@ class Sync(QObject):
                 do = action.action
                 location = action.location
                 
+                if location == FileAction.LOCAL:
+                    if not engine_tools.file_exists_local(path):
+                        # File no longer exists at the time of processing.
+                        # Maybe it was temporary or a quick rename.
+                        # So we ignore it
+                        continue
+                    
+                
                 if do == FileAction.UPLOAD:
                     self.uploadFile.emit(path)
                     localActionCount += 1
@@ -175,19 +185,28 @@ class Sync(QObject):
             print 'File ' + serverpath + ' ignored since it is a temporary file'
             return
            
-
         print 'File ' + serverpath + ':'
+        
+        if changed_file.servermdate == None:
+            mydiff = "** File Not in Server **"
+            edit_time = "(not in server)"
+        else:
+            ttt = (changed_file.localmdate - changed_file.servermdate).total_seconds() 
+            mydiff = str( ttt )
+            edit_time = str(changed_file.servermdate)
+        
         print 'Changed here %s, there %s delta %s' % (
-                    changed_file.localmdate, changed_file.servermdate,
-                    (changed_file.localmdate - changed_file.servermdate).total_seconds())
+                    changed_file.localmdate, edit_time, mydiff)
+                    
         
         try:
-            diff = changed_file.timeDiff()
+            if changed_file.inserver:
+                diff = changed_file.timeDiff()
 
-            MY_TOLERANCE = 10
+                MY_TOLERANCE = 10
             
-            if skipDeltaCheck == False and abs(diff) < MY_TOLERANCE:
-                return
+                if skipDeltaCheck == False and abs(diff) < MY_TOLERANCE:
+                    return
             
             if location == FileAction.SERVER:
                 if changed_file.inlocal:

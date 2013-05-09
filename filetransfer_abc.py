@@ -1,4 +1,10 @@
 from abc import ABCMeta, abstractmethod
+
+import socket
+
+from datetime import datetime as dt
+from datetime import timedelta as td
+from ftplib import FTP_TLS, FTP, error_reply, error_perm
  
 class filetransfer_abc:
     __metaclass__ = ABCMeta
@@ -10,8 +16,11 @@ class filetransfer_abc:
     def connect(self): pass
  
  
-class ftp_a(filetransfer_abc):
+class ftp_si(filetransfer_abc):
 
+    username = ''
+    passwd = ''
+    ftp = None
     
     
     def do_mystuff(self):
@@ -20,17 +29,29 @@ class ftp_a(filetransfer_abc):
         print "Do something!"
 
     def __init__(self, host, useSSL):
+        
         self.ftp = None
         self.useSSL = useSSL
         self.host = host
+        useSSL = False
 
-    def connect(self):
+    def connect(self, the_user, the_passwd):
+
+        self.username = the_user
+        self.passwd = the_passwd
+        
         ok=True
         msg = ''
-        try:
-            if not self.ftp:
-                self.ftp = FTP_TLS(self.host) if self.useSSL is True else FTP(self.host)
-            loginResponse = self.ftp.login(username, passwd)
+
+        if self.useSSL is True:
+            self.ftp = FTP_TLS(self.host)
+        else:    
+            self.ftp=FTP(self.host)
+        
+
+        try:        
+            loginResponse = self.ftp.login(self.username, self.passwd)
+            msg = 'Login ok'
         except socket.gaierror:
             self.ftp = None
             ok = False
@@ -39,7 +60,7 @@ class ftp_a(filetransfer_abc):
             info = traceback.format_exception(*sys.exc_info())
             for i in info: sys.stderr.write(i)
             ok = False
-            msg = error_msg 
+            msg = error_msg         
         else:
             if '230' in loginResponse:
                 ok = True
@@ -98,6 +119,7 @@ class ftp_a(filetransfer_abc):
             exists = True
 
 
+    
     def fileSize (self, filename):
 
         try:        
@@ -234,8 +256,20 @@ class ftp_a(filetransfer_abc):
             return
 
     
+if __name__ == '__main__':
     
-if __name__ == "__main__":
-    c = DerivedClass()
-    c.do_something()
-    c.do_mystuff()
+    print "hello"
+    c = ftp_si('ftp.iqstorage.com', True)
+    c.connect('testuser', 'test')
+
+    a = list
+    a = c.listfiles_basic('/')
+    print a
+    
+    #for s in a:
+    #    print s
+        
+    print "Done"
+    #c.do_something()
+    #c.do_mystuff()
+    

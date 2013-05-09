@@ -209,16 +209,32 @@ class ServerWatcher(Watcher):
 
         sidirlist = list()
 
+        root_cached = False
+        
         fileC = 0
         while True:
             # Gets the list of sub directories and files inside the 
             # current directory `downloading_dir`.
             self.textStatus.emit('Remote scan- Downloading folder list of '+downloading_dir+'...')
-            dir_subdirs = self.getDirs(downloading_dir)
-
-            # sidirlist.extend(dir_subdirs)
-            self.textStatus.emit('Remote scan- Downloading files list of '+downloading_dir+'...')            
-            dirfiles = self.getFiles(downloading_dir)
+            
+            if root_cached and downloading_dir == '/':
+                dir_subdirs = saved_root_dirs
+                dirfiles = saved_root_files
+            else:
+                
+                dir_subdirs = self.getDirs(downloading_dir)
+            
+                if downloading_dir == '/':
+                    saved_root_dirs = dir_subdirs
+    
+                # sidirlist.extend(dir_subdirs)
+                self.textStatus.emit('Remote scan- Downloading files list of '+downloading_dir+'...')            
+                dirfiles = self.getFiles(downloading_dir)
+     
+                if downloading_dir == '/':
+                    saved_root_files = dirfiles
+                    root_cached = True
+                
            
             # Leading '/' in `downloading_dir` breaks the `os.path.join` call
             localdir = os.path.join(self.localdir, downloading_dir[1:])
@@ -829,12 +845,21 @@ class LocalWatcher(Watcher, FileSystemEventHandler):
                 localmdate = LocalWatcher.lastModified(localpath)
                 serverpath = self.serverFromLocal(localpath)
 
+                flagg = 0
+                if localpath.endswith("local.conf"):
+                    flagg = 1
+                    print "Found local.conf"
+
+                file_is_in_server = False
+                
                 with File.fromPath(serverpath) as local_file:
                     # If the file is not in the local DB,
                     # then it's new- we're just adding it now
                     just_added = not local_file.inlocal                        
+                    print "JUST ADDED: " + str(just_added)
                     
                     lastmdate = local_file.localmdate
+                    print "LASTMDATE: " + str (lastmdate)
                     
                     # Update values in the DB for this file
                     local_file.inlocal = True
@@ -843,6 +868,7 @@ class LocalWatcher(Watcher, FileSystemEventHandler):
                     # Done updating values
                     
                     delta = 0
+                    file_is_in_server = local_file.inserver                    
                     if local_file.inserver:
                         delta = local_file.timeDiff()
                     
@@ -850,7 +876,9 @@ class LocalWatcher(Watcher, FileSystemEventHandler):
                 # and committed.
                 if just_added is True:
                     self.fileAdded.emit(LocalWatcher.LOCATION, serverpath)
-                elif localmdate > lastmdate or delta > Watcher.TOLERANCE:
+                elif localmdate > lastmdate or delta > Watcher.TOLERANCE \
+                     or not file_is_in_server:
+                    print "FC_EMIT"
                     self.fileChanged.emit(LocalWatcher.LOCATION, serverpath, True)
 
         # Deleted files are the ones whose `last_checked_local` attribute 
