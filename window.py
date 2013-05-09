@@ -96,6 +96,9 @@ class SyncWindow(QMainWindow):
         self.sync.server.loginCompleted.connect(self.onLoginCompleted)
         self.sync.server.fileEventCompleted.connect(self.onFileEventCompleted)
         self.sync.server.ioError.connect(self.onIOError)
+        # Added by Si
+        self.sync.server.textStatus.connect(self.setStatus)
+        
         self.sync.statusChanged.connect(self.setStatus)
         self.loginRequested.connect(self.sync.server.onLogin) 
 
@@ -117,6 +120,15 @@ class SyncWindow(QMainWindow):
                 
     @Slot()
     def onFileEventCompleted(self):
+        # Workaround because there's an exception
+        # when there's a file IO error
+        # Ideally it should be managed elsewhere
+        # But I don't know the code intimately enough yet.
+        try:
+          self.currentFile
+        except AttributeError:
+          self.currentFile = ''
+        
         self.statusChanged.emit('Completed', self.currentFile, 100)
 
     @Slot(str)

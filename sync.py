@@ -2,6 +2,8 @@ import os
 import sys
 import traceback
 
+import engine_tools
+
 from PySide.QtCore import QObject, Slot, Signal, QTimer, QDir, QThread
 
 from dbcore import File, FileAction, ActionQueue, Session, empty_db
@@ -59,7 +61,7 @@ class Sync(QObject):
         self.actionQueue = ActionQueue()
         
         self.actionTimer = QTimer()
-        self.actionTimer.setInterval(5000)
+        self.actionTimer.setInterval(1)
         self.actionTimer.timeout.connect(self.takeAction)
         
         self.actionTimer.start()
@@ -85,6 +87,8 @@ class Sync(QObject):
         # for normal operations
         self.connections()
 
+        serverActionCount = 0
+        localActionCount = 0
         for action in self.actionQueue:
             if action is not None:
                 print 'Next action: %s' % action 
@@ -94,8 +98,10 @@ class Sync(QObject):
                 
                 if do == FileAction.UPLOAD:
                     self.uploadFile.emit(path)
+                    localActionCount += 1
                 elif do == FileAction.DOWNLOAD:
                     self.downloadFile.emit(path)
+                    serverActionCount += 1
                 elif do == FileAction.DELETE:
                     with File.fromPath(path) as deleted_file:
                         # `action.location` attribute only makes sense when deciding
@@ -104,14 +110,19 @@ class Sync(QObject):
                             localpath = self.local.localFromServer(path)
                             self.deleteLocalFile.emit(localpath)
                             deleted_file.inlocal = False
+                            localActionCount += 1
 
                         elif location == FileAction.SERVER:
                             self.deleteServerFile.emit(path)
                             deleted_file.inserver = False
+                            serverActionCount += 1
         
         self.actionQueue.clear()
+        
+        # Scan server for file changes
         self.statusChanged.emit('Scanning remote files for changes')
         self.server.checkout()
+        
         if self.firstScan:
             # First do a full scan to check for offline changes.
             # From there we will rely on real time notifications watchdog.
@@ -119,7 +130,23 @@ class Sync(QObject):
             self.statusChanged.emit('Scanning local files for changes')
             self.local.checkout()
             self.local.startObserver()
+            # Si Added
+            # Since its the first scan, we should also
+            # set the timer interval
+            self.actionTimer.setInterval(5000)        
         self.cleanSync()
+
+        # Si Added
+        # Set check interval intelligently.
+        # If there's no activity there, wait longer.
+        # Since if there's just no usage, then
+        # no reason to take up CPU cycles.
+        tempInterval = 0
+        if serverActionCount+localActionCount > 0:
+            tempInterval = 5000
+        else:
+            tempInterval = 1000 * 10
+        
         self.actionTimer.start()
             
     @Slot()
@@ -133,15 +160,21 @@ class Sync(QObject):
         session.commit()
         self.statusChanged.emit('Sync completed. Waiting for changes')
 
-    @Slot(str, str)
-    def onChanged(self, location, serverpath):
+    @Slot(str, str, bool)
+    def onChanged(self, location, serverpath, skipDeltaCheck):
         changed_file = File.fromPath(serverpath)
         action = None
         
-        if not changed_file.servermdate:
+        #if not changed_file.servermdate:
             # Probably a local added event that also
             # spawned a modified event.
+            #return
+
+        file_name_only = os.path.basename(serverpath)
+        if engine_tools.isTemporaryFile(file_name_only):
+            print 'File ' + serverpath + ' ignored since it is a temporary file'
             return
+           
 
         print 'File ' + serverpath + ':'
         print 'Changed here %s, there %s delta %s' % (
@@ -150,8 +183,10 @@ class Sync(QObject):
         
         try:
             diff = changed_file.timeDiff()
+
+            MY_TOLERANCE = 10
             
-            if abs(diff) < Watcher.TOLERANCE:
+            if skipDeltaCheck == False and abs(diff) < MY_TOLERANCE:
                 return
             
             if location == FileAction.SERVER:
@@ -181,6 +216,12 @@ class Sync(QObject):
     
     @Slot(str, str)
     def onAdded(self, location, serverpath):
+
+        file_name_only = os.path.basename(serverpath)
+        if engine_tools.isTemporaryFile(file_name_only):
+            print 'File ' + serverpath + ' was created but ignored since it is a temporary file'
+            return
+        
         added_file = File.fromPath(serverpath)
         action = None
         
@@ -194,6 +235,12 @@ class Sync(QObject):
         
     @Slot(str, str)
     def onDeleted(self, location, serverpath):
+
+        # NOTE: For temporary files, the current action is to delete it.
+        # Reason 1: We need to remove it from the database.
+        # Reason 2: If somehow there is a temporary file 
+        # there on the other side, then it makes sense to delete it.
+        
         deleted_file = File.fromPath(serverpath)
         action = None
         

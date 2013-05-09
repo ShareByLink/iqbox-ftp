@@ -5,6 +5,9 @@ import socket
 import platform
 import traceback
 import StringIO
+
+import engine_tools
+
 from datetime import datetime as dt
 from datetime import timedelta as td
 from ftplib import FTP_TLS, FTP, error_reply, error_perm
@@ -15,6 +18,7 @@ from watchdog.observers import Observer
 
 from dbcore import File, FileAction, Session
 from localsettings import DEBUG
+
 
 
 def upload_test(f):
@@ -67,7 +71,7 @@ class Watcher(QObject):
 
     fileDeleted = Signal((str,str,))
     fileAdded = Signal((str,str,))
-    fileChanged = Signal((str,str,))
+    fileChanged = Signal((str,str,bool,))
     checked = Signal()
     ioError = Signal((str,))
     
@@ -123,6 +127,9 @@ class ServerWatcher(Watcher):
 
     downloadProgress = Signal((int, int,))
     uploadProgress = Signal((int, int,))
+    # Si added:
+    textStatus = Signal((str,))
+    
     fileEvent = Signal((str,))
     fileEventCompleted = Signal()    
     loginCompleted = Signal((bool, str,))
@@ -200,10 +207,17 @@ class ServerWatcher(Watcher):
         downloading_dir = self.currentdir
         check_date = dt.utcnow()
 
+        sidirlist = list()
+
+        fileC = 0
         while True:
             # Gets the list of sub directories and files inside the 
             # current directory `downloading_dir`.
+            self.textStatus.emit('Remote scan- Downloading folder list of '+downloading_dir+'...')
             dir_subdirs = self.getDirs(downloading_dir)
+
+            # sidirlist.extend(dir_subdirs)
+            self.textStatus.emit('Remote scan- Downloading files list of '+downloading_dir+'...')            
             dirfiles = self.getFiles(downloading_dir)
            
             # Leading '/' in `downloading_dir` breaks the `os.path.join` call
@@ -211,35 +225,72 @@ class ServerWatcher(Watcher):
             if not os.path.exists(localdir):
                 # Creates the directory if it doesn't already exists.
                 os.makedirs(localdir)
-
+            
             for file_ in dirfiles:
+                                
                 # `serverpath` is the absolute path of the file on the server,
                 # download it only if it hasn't been already downloaded
                 serverpath = os.path.join(downloading_dir, file_)
                 serverpath = QDir.fromNativeSeparators(serverpath)
                 server_file = File.fromPath(serverpath)
-                if server_file.last_checked_server != check_date:
-                    if platform.system() == 'Windows':
-                        filename = os.path.basename(serverpath)
-                        badName = False
-                        for chr in ['\\', '/', ':', '?', '"', '<', '>', '|']:
-                            if chr in filename:
-                                badName = True
-                                break
-                        if badName:
-                            if filename not in self.warnedNames:
-                                self.warnedNames.append(filename)
-                                self.badFilenameFound.emit(filename)
-                            continue
 
-                    # Do this process only once per file        
+                self.textStatus.emit('Scanning remote file... '+serverpath+'...')
+
+                # How do we know if we should check this server file?
+                # We see if the date last checked is the check start time.
+                if server_file.last_checked_server != check_date:
+                    
+                    # Do this process only once per file
+    
+                    # Added by Simon
+                    # Give feedback on scanning of files.
+                    fileC += 1
+                    if fileC % 1 == 2:
+                        self.textStatus.emit('Scanning remote files for changes, '+str(fileC)+' files scanned.')
+                        
+                    
+                    # STEP: IS THIS THE FIRST TIME WE SAW THE FILE, OR WAS IT ALREADY IN OUR DB?
                     just_added = not server_file.inserver
+
+                    # STEP: IF ITS A NEW FILE, ENSURE WE DONT WANT TO SKIP IT
+                    # Example: If it's a temporary file, or a Unix file with a name we don't support.
+                    
+                    if just_added:    
+                        filename = os.path.basename(serverpath)
+     
+                        if platform.system() == 'Windows':
+                            
+                            badName = False
+                            for chr in ['\\', '/', ':', '?', '"', '<', '>', '|']:
+                                if chr in filename:
+                                    badName = True
+                                    break
+                            if badName:
+                                if filename not in self.warnedNames:
+                                    self.warnedNames.append(filename)
+                                    self.badFilenameFound.emit(filename)
+                                continue
+                        
+                    
+                    # STEP: ASSUMING THE FILE DID EXIST IN OUR DB, LETS SAVE THE LAST MODIFICATION DATE
                     lastmdate = server_file.servermdate
+                    
+                    # STEP: SAVE THE MOD DATE TO A VARIABLE
+                    # Now we get the last mod time.
+                    # We expect this to work fine since this file
+                    # was found on the server
                     servermdate = self.lastModified(serverpath)
                     
+                    # STEP: SET BOOL SHOWING THAT IT WAS ON THE SERVER, SINCE WE KNOW IT IS.
                     server_file.inserver = True
+                    
+                    # STEP: SET THE TIME THE FILE WAS LAST CHECKED TO THE SCAN START TIME
                     server_file.last_checked_server = check_date
+                    
+                    # STEP: SET THE MOD DATE IN THE DATABASE TO THE ONE WE JUST GOT
                     server_file.servermdate = servermdate
+                    
+                    # STEP: SAVE THIS CHANGE TO THE DATABASE
                     server_file.session.commit()
                     
                     delta = 0
@@ -250,8 +301,10 @@ class ServerWatcher(Watcher):
                     if just_added is True:
                         self.fileAdded.emit(ServerWatcher.LOCATION, serverpath)
                     elif server_file.servermdate > lastmdate or delta < -Watcher.TOLERANCE:
-                        self.fileChanged.emit(ServerWatcher.LOCATION, serverpath) 
+                        self.fileChanged.emit(ServerWatcher.LOCATION, serverpath, False) 
+            #END FOR            
             
+            self.textStatus.emit('Remote scan- Finding next folder...')
             dir_ready = True
             for dir_ in dir_subdirs:
                 # `dirpath` is the absolute path of the subdirectory on the server,
@@ -269,6 +322,7 @@ class ServerWatcher(Watcher):
                 # All subdirectories of `downloading_dir` are already in `checked_dirs`
                 if downloading_dir == '/':
                     # All directories ready and at '/', means checkout is complete
+                    # So, exit the main While loop!!
                     break
                     
                 else:
@@ -276,7 +330,12 @@ class ServerWatcher(Watcher):
                     # Back one directory to find directories that are not in `checked_dirs`
                     checked_dirs.append(downloading_dir)
                     downloading_dir = os.path.dirname(downloading_dir)
+            
+            self.textStatus.emit('Remote scan- Found Folder...')
                     
+##### END OF WHILE ################
+###################################################################
+        
         # Deleted files are the ones whose `last_checked_server` attribute 
         # didn't get updated in the recursive run.
         session = Session()
@@ -519,7 +578,9 @@ class ServerWatcher(Watcher):
         except (error_reply, error_perm) as ftperr:
             print 'Error downloading %s, %s' % (filename, ftperr)
             downloaded = False
-                
+        
+        # TODO: Sometimes the file doesn't complete properly.
+        # in that case we maybe shouldn't call this?
         self.fileEventCompleted.emit()
         
         return downloaded
@@ -587,6 +648,8 @@ class ServerWatcher(Watcher):
             print 'Error uploading %s, %s' % (filename, err)
             uploaded = False
             
+        # TODO: Sometimes the file doesn't complete properly.
+        # in that case we maybe shouldn't call this?            
         self.fileEventCompleted.emit()
         
         return uploaded
@@ -605,7 +668,7 @@ class ServerWatcher(Watcher):
         if '213 ' not in timestamp:
             # Second chance was found to be needed in some cases.
             timestamp = self.ftp.sendcmd('MDTM %s' % filename)
-
+            
         timestamp = timestamp.split(' ')[-1]
         dateformat = '%Y%m%d%H%M%S.%f' if '.' in timestamp else '%Y%m%d%H%M%S'
         
@@ -673,12 +736,18 @@ class ServerWatcher(Watcher):
         
         def actionFromPath(serverpath):
             f = File()
-            f.servermdate = self.lastModified(serverpath)
+            fileExistsOnServer = True
+            try:    
+                f.servermdate = self.lastModified(serverpath)
+            except error_perm:
+                fileExistsOnServer = False
+                f.servermdate = 0
+            
             f.localmdate = LocalWatcher.lastModified(self.localFromServer(serverpath))
             diff = f.timeDiff()
             action = None
             if abs(diff) > Watcher.TOLERANCE:
-                if diff > 0:
+                if not fileExistsOnServer or diff > 0:
                     action = FileAction(serverpath, FileAction.UPLOAD, ServerWatcher.LOCATION)
                 else:
                     action = FileAction(serverpath, FileAction.DOWNLOAD, LocalWatcher.LOCATION)
@@ -724,6 +793,7 @@ class ServerWatcher(Watcher):
            
 class LocalWatcher(Watcher, FileSystemEventHandler):
     
+    textStatus = Signal((str,))
     LOCATION = 'local'
     
     def __init__(self, localdir, parent=None):
@@ -737,24 +807,40 @@ class LocalWatcher(Watcher, FileSystemEventHandler):
     
     @pause_timer
     @Slot()
+    # LOCAL FILE SCANNING
+    # Not the same as the realtime change detection
     def checkout(self):
         check_date = dt.utcnow()
+        fileC = 0
         for item in os.walk(self.localdir):
             directory = item[0]
             subfiles = item[-1]
 
             for file_ in subfiles:
+
+                # Added by Simon
+                # Give feedback on scanning of files.
+                fileC += 1
+                if fileC % 100 == 0:
+                    self.textStatus.emit('Scanning local files for changes, '+str(fileC)+' scanned.')
+                    # time.sleep(0.1)
+                
                 localpath = os.path.join(directory, file_)
                 localmdate = LocalWatcher.lastModified(localpath)
                 serverpath = self.serverFromLocal(localpath)
 
                 with File.fromPath(serverpath) as local_file:
-                    just_added = not local_file.inlocal
+                    # If the file is not in the local DB,
+                    # then it's new- we're just adding it now
+                    just_added = not local_file.inlocal                        
+                    
                     lastmdate = local_file.localmdate
-                         
+                    
+                    # Update values in the DB for this file
                     local_file.inlocal = True
                     local_file.last_checked_local = check_date
                     local_file.localmdate = localmdate
+                    # Done updating values
                     
                     delta = 0
                     if local_file.inserver:
@@ -765,7 +851,7 @@ class LocalWatcher(Watcher, FileSystemEventHandler):
                 if just_added is True:
                     self.fileAdded.emit(LocalWatcher.LOCATION, serverpath)
                 elif localmdate > lastmdate or delta > Watcher.TOLERANCE:
-                    self.fileChanged.emit(LocalWatcher.LOCATION, serverpath)
+                    self.fileChanged.emit(LocalWatcher.LOCATION, serverpath, True)
 
         # Deleted files are the ones whose `last_checked_local` attribute 
         # didn't get updated in the recursive run.
@@ -796,14 +882,22 @@ class LocalWatcher(Watcher, FileSystemEventHandler):
     @Slot()
     def startObserver(self):
         self.observer.start()
-        
+    
+    # FILESYSTEM WATCHER CALLBACK: on file created    
     @ignore_dirs
     def on_created(self, event):
+        
         serverpath = self.serverFromLocal(event.src_path)
         with File.fromPath(serverpath) as added_file:
             # Updating the database.
+            # First, ensure the file still exists.
+            try:
+                md = LocalWatcher.lastModified(event.src_path)
+            except:
+                return
+            added_file.localmdate = md            
             added_file.inlocal = True
-            added_file.localmdate = LocalWatcher.lastModified(event.src_path)
+            
         self.fileAdded.emit(LocalWatcher.LOCATION, serverpath)
 
     @ignore_dirs
@@ -816,8 +910,14 @@ class LocalWatcher(Watcher, FileSystemEventHandler):
         serverpath = self.serverFromLocal(event.src_path)
         with File.fromPath(serverpath) as changed_file:
             # Updating the database.
-            changed_file.localmdate = LocalWatcher.lastModified(event.src_path)
-        self.fileChanged.emit(LocalWatcher.LOCATION, serverpath)
+            # Ensure file exists. Excel for example makes temp files.
+            try:
+                md=LocalWatcher.lastModified(event.src_path)
+            except:
+                # File doesn't exist anymore
+                return
+            changed_file.localmdate = md
+        self.fileChanged.emit(LocalWatcher.LOCATION, serverpath, True)
         
     @ignore_dirs
     def on_moved(self, event):

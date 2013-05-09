@@ -1,14 +1,24 @@
 import sys
+import os
 from datetime import datetime as dt
 
 from PySide.QtGui import QApplication, QFont
 
-from localsettings import DEBUG
+from localsettings import DEBUG, WEARECODING
 from window import SyncWindow
 from views import View
 
+#import engine_tools
+
 
 if __name__ == '__main__':
+
+    if WEARECODING:
+        try:
+          os.remove('log.txt')
+        except: 
+          pass
+        
     if not DEBUG:
        # Redirect `sys.stderr` and `sys.stdout` to a file 
        # when building for release.
@@ -23,7 +33,10 @@ if __name__ == '__main__':
             f.flush()
     sys.stderr = sys.stdout = F()
     
-    app = QApplication(sys.argv)
+    app=QApplication.instance() # checks if QApplication already exists 
+    if not app: # create QApplication if it doesnt exist 
+        app = QApplication(sys.argv)
+
     window = SyncWindow()
     font = QFont(View.fontFamily, 12, 50, False)
     

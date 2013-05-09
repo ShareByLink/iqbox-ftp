@@ -3,6 +3,7 @@ from sqlalchemy.orm.exc import MultipleResultsFound, NoResultFound
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean
 
+import time
 
 engine = create_engine('sqlite:///iqmeta.db', echo=False)
 Session = sessionmaker(bind=engine)
@@ -35,8 +36,19 @@ class ActionQueue(object):
         self.session.commit()
         
     def clear(self):
-        self.session.query(FileAction).delete()
-        self.session.commit()
+        didClear = True
+        try:
+            self.session.query(FileAction).delete()
+            self.session.commit()            
+        except OperationalError:
+            didClear = False
+            
+        if not didClear:
+            print "IO error. Could be from computer suspend, shutdown or hibernate. Waiting 6s to retry."
+            time.sleep(6)
+            self.session.query(FileAction).delete()
+            self.session.commit()            
+        
     
     def add(self, action):
         # Looking for previous actions over the same path

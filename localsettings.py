@@ -2,6 +2,8 @@ from PySide.QtCore import QSettings
 
 
 DEBUG = False
+# Flag for anything related to development, ex: deleting log at start, QT debug workarounds:
+WEARECODING = True
 
 # To be used with the `QSettings` objects
 SettingsKeys = {
