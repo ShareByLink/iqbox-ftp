@@ -98,11 +98,13 @@ class Sync(QObject):
                 do = action.action
                 location = action.location
                 
-                if location == FileAction.LOCAL:
+                if location == FileAction.LOCAL and (do == FileAction.UPLOAD \
+                   or do == FileAction.DELETE):
                     if not engine_tools.file_exists_local(path):
                         # File no longer exists at the time of processing.
                         # Maybe it was temporary or a quick rename.
                         # So we ignore it
+                        print "Ignored action on " + path + ": File doesn't exist on local."
                         continue
                     
                 
